@@ -29,12 +29,10 @@ export const useAuth = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-      }
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
     
     if (error) {
@@ -42,12 +40,12 @@ export const useAuth = () => {
     }
   };
 
-  const signInWithMicrosoft = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'azure',
+  const signUp = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
       options: {
-        redirectTo: `${window.location.origin}/`,
-        scopes: 'email'
+        emailRedirectTo: `${window.location.origin}/`,
       }
     });
     
@@ -68,8 +66,8 @@ export const useAuth = () => {
     user,
     session,
     loading,
-    signInWithGoogle,
-    signInWithMicrosoft,
+    signIn,
+    signUp,
     signOut,
   };
 };
