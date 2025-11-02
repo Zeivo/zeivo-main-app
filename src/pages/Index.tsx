@@ -1,13 +1,15 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Sparkles, Heart, TrendingDown } from "lucide-react";
+import { Search, Sparkles, Heart, TrendingDown, LogIn } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +39,26 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <nav className="border-b border-border">
+        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+          <h1 className="text-xl font-bold text-foreground">Zeivo</h1>
+          {user ? (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">{user.email}</span>
+              <Button variant="outline" onClick={() => signOut()}>
+                Logg ut
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" onClick={() => navigate('/auth')}>
+              <LogIn className="h-4 w-4 mr-2" />
+              Logg inn
+            </Button>
+          )}
+        </div>
+      </nav>
+
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="container mx-auto px-4 py-24 md:py-32">
