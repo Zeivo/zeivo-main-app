@@ -1,41 +1,34 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Sparkles, Heart, TrendingDown, LogIn } from "lucide-react";
+import { Search, Sparkles, Heart, TrendingDown, LogIn, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useProducts } from "@/hooks/useProducts";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { data: products = [], isLoading } = useProducts();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.toLowerCase().includes("iphone")) {
-      navigate("/produkt/iphone-15-pro");
-    } else if (searchQuery.toLowerCase().includes("airpods")) {
-      navigate("/produkt/airpods-pro");
+    if (searchQuery.trim()) {
+      // Find matching product by name
+      const matchingProduct = products.find(p => 
+        p.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      
+      if (matchingProduct) {
+        navigate(`/produkt/${matchingProduct.slug}`);
+      }
     }
   };
 
-  const featuredProducts = [
-    {
-      name: "iPhone 15 Pro",
-      image: "https://images.unsplash.com/photo-1696446702052-1367f6c6d369?w=400&h=300&fit=crop",
-      newPrice: 13990,
-      usedPrice: 8990,
-      slug: "iphone-15-pro"
-    },
-    {
-      name: "AirPods Pro",
-      image: "https://images.unsplash.com/photo-1606841837239-c5a1a4a07af7?w=400&h=300&fit=crop",
-      newPrice: 2990,
-      usedPrice: 1990,
-      slug: "airpods-pro"
-    }
-  ];
+  // Get featured products (first 2)
+  const featuredProducts = products.slice(0, 2);
 
   return (
     <div className="min-h-screen bg-background">
@@ -104,46 +97,62 @@ const Index = () => {
       {/* Featured Products */}
       <section className="container mx-auto px-4 py-16">
         <h2 className="text-3xl font-bold mb-8 text-center">Populære produkter</h2>
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {featuredProducts.map((product) => {
-            const savings = product.newPrice - product.usedPrice;
-            const savingsPercent = Math.round((savings / product.newPrice) * 100);
-            
-            return (
-              <Card 
-                key={product.slug} 
-                className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => navigate(`/produkt/${product.slug}`)}
-              >
-                <div className="aspect-video overflow-hidden bg-muted">
-                  <img 
-                    src={product.image} 
-                    alt={product.name}
-                    className="w-full h-full object-cover hover:scale-105 transition-transform"
-                  />
-                </div>
-                <CardHeader>
-                  <CardTitle>{product.name}</CardTitle>
-                  <CardDescription>
-                    Spar {savings.toLocaleString('nb-NO')} kr ({savingsPercent}%)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Nytt fra</p>
-                      <p className="text-xl font-bold">{product.newPrice.toLocaleString('nb-NO')} kr</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Brukt fra</p>
-                      <p className="text-xl font-bold text-accent">{product.usedPrice.toLocaleString('nb-NO')} kr</p>
-                    </div>
+        {isLoading ? (
+          <div className="flex justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {featuredProducts.map((product) => {
+              const savings = product.new_price_low && product.used_price_high 
+                ? product.new_price_low - product.used_price_high 
+                : 0;
+              const savingsPercent = product.new_price_low && savings
+                ? Math.round((savings / product.new_price_low) * 100)
+                : 0;
+              
+              return (
+                <Card 
+                  key={product.id} 
+                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => navigate(`/produkt/${product.slug}`)}
+                >
+                  <div className="aspect-video overflow-hidden bg-muted">
+                    <img 
+                      src={product.image} 
+                      alt={product.name}
+                      className="w-full h-full object-cover hover:scale-105 transition-transform"
+                    />
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  <CardHeader>
+                    <CardTitle>{product.name}</CardTitle>
+                    {savings > 0 && (
+                      <CardDescription>
+                        Spar {savings.toLocaleString('nb-NO')} kr ({savingsPercent}%)
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex justify-between items-center">
+                      {product.new_price_low && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Nytt fra</p>
+                          <p className="text-xl font-bold">{product.new_price_low.toLocaleString('nb-NO')} kr</p>
+                        </div>
+                      )}
+                      {product.used_price_low && (
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Brukt fra</p>
+                          <p className="text-xl font-bold text-accent">{product.used_price_low.toLocaleString('nb-NO')} kr</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* How it Works */}

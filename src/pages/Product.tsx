@@ -3,44 +3,30 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, ArrowLeft, Bell } from "lucide-react";
+import { ExternalLink, ArrowLeft, Bell, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data - later can be replaced with API
-const mockProducts: Record<string, any> = {
-  "iphone-15-pro": {
-    name: "iPhone 15 Pro",
-    image: "https://images.unsplash.com/photo-1696446702052-1367f6c6d369?w=800&h=600&fit=crop",
-    category: "Elektronikk",
-    usedMinPrice: 8990,
-    usedMaxPrice: 11990,
-    finnSearchUrl: "https://www.finn.no/bap/forsale/search.html?q=iphone%2015%20pro",
-    offers: [
-      { merchant: "Elkjøp", price: 13990, url: "#", logo: "🏪" },
-      { merchant: "Komplett", price: 13790, url: "#", logo: "🏪" },
-      { merchant: "Power", price: 14490, url: "#", logo: "🏪" },
-    ]
-  },
-  "airpods-pro": {
-    name: "AirPods Pro (2. generasjon)",
-    image: "https://images.unsplash.com/photo-1606841837239-c5a1a4a07af7?w=800&h=600&fit=crop",
-    category: "Lyd",
-    usedMinPrice: 1990,
-    usedMaxPrice: 2490,
-    finnSearchUrl: "https://www.finn.no/bap/forsale/search.html?q=airpods%20pro",
-    offers: [
-      { merchant: "Elkjøp", price: 2990, url: "#", logo: "🏪" },
-      { merchant: "NetOnNet", price: 2890, url: "#", logo: "🏪" },
-    ]
-  }
-};
+import { useProduct, useProductOffers } from "@/hooks/useProducts";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const Product = () => {
   const { slug } = useParams();
-  const product = slug ? mockProducts[slug] : null;
+  const { data: product, isLoading: productLoading } = useProduct(slug);
+  const { data: offers = [], isLoading: offersLoading } = useProductOffers(product?.id);
   const [email, setEmail] = useState("");
+  const [targetPrice, setTargetPrice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  if (productLoading || offersLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -63,17 +49,56 @@ const Product = () => {
     );
   }
 
-  const handleAlertSubmit = (e: React.FormEvent) => {
+  const handleAlertSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "Varsel aktivert!",
-      description: "Du vil få beskjed når prisen endres.",
-    });
-    setEmail("");
+    setSubmitting(true);
+
+    try {
+      const price = parseInt(targetPrice);
+      if (isNaN(price) || price <= 0) {
+        toast({
+          title: "Ugyldig pris",
+          description: "Vennligst oppgi en gyldig målpris.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase.from("price_alerts").insert({
+        user_id: user?.id || "00000000-0000-0000-0000-000000000000",
+        product_id: product.id,
+        email,
+        target_price: price,
+        is_active: true,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Varsel aktivert!",
+        description: "Du vil få beskjed når prisen faller under din målpris.",
+      });
+      setEmail("");
+      setTargetPrice("");
+    } catch (error: any) {
+      toast({
+        title: "Feil",
+        description: error.message || "Kunne ikke aktivere varsel.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const savings = product.offers[0].price - product.usedMaxPrice;
-  const savingsPercent = Math.round((savings / product.offers[0].price) * 100);
+  const newOffers = offers.filter(o => o.condition === "new");
+  const lowestNewPrice = newOffers.length > 0 ? newOffers[0].price : product.new_price_low;
+  const savings = lowestNewPrice && product.used_price_high 
+    ? lowestNewPrice - product.used_price_high 
+    : 0;
+  const savingsPercent = lowestNewPrice && savings 
+    ? Math.round((savings / lowestNewPrice) * 100) 
+    : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -101,63 +126,69 @@ const Product = () => {
           <div className="flex flex-col justify-center">
             <Badge className="w-fit mb-4">{product.category}</Badge>
             <h1 className="text-4xl font-bold mb-4">{product.name}</h1>
-            <div className="bg-accent/10 border border-accent rounded-2xl p-6">
-              <p className="text-sm text-muted-foreground mb-2">Spar opptil</p>
-              <p className="text-4xl font-bold text-accent mb-2">{savings.toLocaleString('nb-NO')} kr</p>
-              <p className="text-sm text-muted-foreground">ved å kjøpe brukt ({savingsPercent}% rabatt)</p>
-            </div>
+            {savings > 0 && (
+              <div className="bg-accent/10 border border-accent rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-2">Spar opptil</p>
+                <p className="text-4xl font-bold text-accent mb-2">{savings.toLocaleString('nb-NO')} kr</p>
+                <p className="text-sm text-muted-foreground">ved å kjøpe brukt ({savingsPercent}% rabatt)</p>
+              </div>
+            )}
           </div>
         </div>
 
         {/* New Prices */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold mb-6">Nye priser</h2>
-          <div className="grid md:grid-cols-3 gap-4">
-            {product.offers.map((offer: any, idx: number) => (
-              <Card key={idx} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-3xl">{offer.logo}</span>
-                    <Badge variant="outline" className="text-xs">Reklame</Badge>
+        {newOffers.length > 0 && (
+          <section className="mb-12">
+            <h2 className="text-2xl font-bold mb-6">Nye priser</h2>
+            <div className="grid md:grid-cols-3 gap-4">
+              {newOffers.map((offer) => (
+                <Card key={offer.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-3xl">🏪</span>
+                      <Badge variant="outline" className="text-xs">Reklame</Badge>
+                    </div>
+                    <CardTitle className="text-lg">{offer.merchant_name}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold mb-4">{offer.price.toLocaleString('nb-NO')} kr</p>
+                    <Button className="w-full" asChild disabled={!offer.url}>
+                      <a href={offer.url || "#"} target="_blank" rel="noopener noreferrer">
+                        Se tilbud
+                        <ExternalLink className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Used Price */}
+        {product.used_price_low && product.used_price_high && (
+          <section className="mb-12">
+            <h2 className="text-2xl font-bold mb-6">Bruktpris på Finn.no</h2>
+            <Card className="bg-accent/5 border-accent">
+              <CardContent className="pt-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Priser fra bruktmarkedet</p>
+                    <p className="text-3xl font-bold">
+                      {product.used_price_low.toLocaleString('nb-NO')} - {product.used_price_high.toLocaleString('nb-NO')} kr
+                    </p>
                   </div>
-                  <CardTitle className="text-lg">{offer.merchant}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-3xl font-bold mb-4">{offer.price.toLocaleString('nb-NO')} kr</p>
-                  <Button className="w-full" asChild>
-                    <a href={offer.url} target="_blank" rel="noopener noreferrer">
-                      Se tilbud
+                  <Button size="lg" variant="outline" asChild>
+                    <a href={`https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(product.name)}`} target="_blank" rel="noopener noreferrer">
+                      Se på Finn.no
                       <ExternalLink className="ml-2 h-4 w-4" />
                     </a>
                   </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-
-        {/* Used Price */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold mb-6">Bruktpris på Finn.no</h2>
-          <Card className="bg-accent/5 border-accent">
-            <CardContent className="pt-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Priser fra bruktmarkedet</p>
-                  <p className="text-3xl font-bold">
-                    {product.usedMinPrice.toLocaleString('nb-NO')} - {product.usedMaxPrice.toLocaleString('nb-NO')} kr
-                  </p>
                 </div>
-                <Button size="lg" variant="outline" asChild>
-                  <a href={product.finnSearchUrl} target="_blank" rel="noopener noreferrer">
-                    Se på Finn.no
-                    <ExternalLink className="ml-2 h-4 w-4" />
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
+              </CardContent>
+            </Card>
+          </section>
+        )}
 
         {/* Alert Form */}
         <section>
@@ -168,20 +199,39 @@ const Product = () => {
                 Få varsel om prisendringer
               </CardTitle>
               <CardDescription>
-                Vi sender deg en e-post når prisen faller
+                Vi sender deg en e-post når prisen faller under din målpris
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleAlertSubmit} className="flex gap-4">
-                <Input
-                  type="email"
-                  placeholder="din@epost.no"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="flex-1"
-                />
-                <Button type="submit">Aktiver varsel</Button>
+              <form onSubmit={handleAlertSubmit} className="space-y-4">
+                <div className="flex gap-4">
+                  <Input
+                    type="email"
+                    placeholder="din@epost.no"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="flex-1"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Målpris (kr)"
+                    value={targetPrice}
+                    onChange={(e) => setTargetPrice(e.target.value)}
+                    required
+                    className="w-40"
+                  />
+                </div>
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Aktiverer...
+                    </>
+                  ) : (
+                    "Aktiver varsel"
+                  )}
+                </Button>
               </form>
             </CardContent>
           </Card>

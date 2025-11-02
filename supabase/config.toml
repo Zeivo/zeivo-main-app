@@ -1,1 +1,4 @@
 project_id = "yfutdebllhsawqzihysx"
+
+[functions.check-price-alerts]
+verify_jwt = false
