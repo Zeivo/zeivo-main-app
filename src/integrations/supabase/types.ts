@@ -14,6 +14,130 @@ export type Database = {
   }
   public: {
     Tables: {
+      merchant_offers: {
+        Row: {
+          condition: string
+          created_at: string
+          id: string
+          merchant_name: string
+          price: number
+          product_id: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          condition: string
+          created_at?: string
+          id?: string
+          merchant_name: string
+          price: number
+          product_id: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          condition?: string
+          created_at?: string
+          id?: string
+          merchant_name?: string
+          price?: number
+          product_id?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_offers_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_alerts: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean
+          product_id: string
+          target_price: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          is_active?: boolean
+          product_id: string
+          target_price: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          is_active?: boolean
+          product_id?: string
+          target_price?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_alerts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          image: string
+          name: string
+          new_price_high: number | null
+          new_price_low: number | null
+          slug: string
+          updated_at: string
+          used_price_high: number | null
+          used_price_low: number | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          image: string
+          name: string
+          new_price_high?: number | null
+          new_price_low?: number | null
+          slug: string
+          updated_at?: string
+          used_price_high?: number | null
+          used_price_low?: number | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          image?: string
+          name?: string
+          new_price_high?: number | null
+          new_price_low?: number | null
+          slug?: string
+          updated_at?: string
+          used_price_high?: number | null
+          used_price_low?: number | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
