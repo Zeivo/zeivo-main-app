@@ -54,11 +54,11 @@ const Auth = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-accent/5 to-background px-4">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader className="space-y-2 text-center">
           <CardTitle className="text-3xl font-bold">Velkommen til Zeivo</CardTitle>
-          <CardDescription>
+          <CardDescription className="text-base">
             {isSignUp ? 'Opprett en konto for å komme i gang' : 'Logg inn for å få tilgang til alle funksjoner'}
           </CardDescription>
         </CardHeader>
@@ -88,7 +88,7 @@ const Auth = () => {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
