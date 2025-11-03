@@ -26,7 +26,7 @@ const Support = () => {
     },
     {
       question: "Må jeg logge inn for å bruke Zeivo?",
-      answer: "Du kan søke og sammenligne priser uten å logge inn. For å sette opp prisvarsler og få personlige varsler, må du opprette en gratis konto."
+      answer: "Ja, du må opprette en gratis konto for å søke og sammenligne priser. Dette hjelper oss å gi deg en bedre opplevelse og muligheten til å sette opp prisvarsler og få personlige varsler."
     },
     {
       question: "Er Zeivo gratis å bruke?",

@@ -3,19 +3,31 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Sparkles, Heart, TrendingDown, LogIn } from "lucide-react";
+import { Search, Sparkles, Heart, TrendingDown, LogIn, Shield } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAdmin } from "@/hooks/useAdmin";
+import { toast } from "sonner";
 
 const Index = () => {
   const { data: products = [], isLoading } = useProducts();
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { isAdmin } = useAdmin();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!user) {
+      toast.error("Du må være innlogget for å søke", {
+        description: "Registrer deg gratis for å bruke Zeivo"
+      });
+      navigate('/auth');
+      return;
+    }
+
     if (searchQuery.trim()) {
       const matchingProduct = products.find(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -23,6 +35,10 @@ const Index = () => {
       
       if (matchingProduct) {
         navigate(`/produkt/${matchingProduct.slug}`);
+      } else {
+        toast.error("Fant ikke produktet", {
+          description: "Prøv et annet søkeord"
+        });
       }
     }
   };
@@ -36,6 +52,12 @@ const Index = () => {
           {user ? (
             <div className="flex items-center gap-4">
               <span className="text-sm text-muted-foreground">{user.email}</span>
+              {isAdmin && (
+                <Button variant="ghost" size="sm" onClick={() => navigate('/admin')}>
+                  <Shield className="h-4 w-4 mr-2" />
+                  Admin
+                </Button>
+              )}
               <Button variant="outline" onClick={() => signOut()}>
                 Logg ut
               </Button>
@@ -70,20 +92,27 @@ const Index = () => {
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Søk etter produkt"
+                  placeholder={user ? "Søk etter produkt" : "Logg inn for å søke"}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-12 h-14 text-lg rounded-2xl"
+                  disabled={!user}
                 />
                 <Button 
                   type="submit" 
                   size="lg"
                   className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                  disabled={!user}
                 >
                   Søk
                 </Button>
               </div>
             </form>
+            {!user && (
+              <p className="text-sm text-muted-foreground mt-4">
+                <Link to="/auth" className="text-accent hover:underline">Registrer deg gratis</Link> for å søke og sammenligne priser
+              </p>
+            )}
           </div>
         </div>
 
