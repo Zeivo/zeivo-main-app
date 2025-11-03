@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -6,33 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Mail, Shield, Key, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { ArrowLeft, Mail, Shield, Loader2 } from "lucide-react";
 
 const Profile = () => {
   const navigate = useNavigate();
   const { user, signOut, loading } = useAuth();
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
-
-  const handlePasswordReset = async () => {
-    if (!user?.email) return;
-    
-    setIsResettingPassword(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/auth`,
-      });
-      
-      if (error) throw error;
-      
-      toast.success("Passordtilbakestillings-e-post sendt! Sjekk innboksen din.");
-    } catch (error: any) {
-      toast.error(error.message || "Kunne ikke sende tilbakestillings-e-post");
-    } finally {
-      setIsResettingPassword(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -89,10 +66,6 @@ const Profile = () => {
                 <Input value={user.email || ""} disabled />
               </div>
               <div className="space-y-2">
-                <Label>Bruker-ID</Label>
-                <Input value={user.id} disabled className="font-mono text-xs" />
-              </div>
-              <div className="space-y-2">
                 <Label>Opprettet</Label>
                 <Input 
                   value={user.created_at ? new Date(user.created_at).toLocaleDateString('nb-NO') : "Ukjent"} 
@@ -110,33 +83,15 @@ const Profile = () => {
                 Sikkerhet
               </CardTitle>
               <CardDescription>
-                Administrer passordet ditt
+                Administrer kontosikkerheten din
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Key className="h-4 w-4" />
-                  Passord
-                </Label>
+                <Label>Passord</Label>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Klikk på knappen nedenfor for å motta en e-post med instruksjoner for å tilbakestille passordet ditt.
+                  For å endre passordet ditt, vennligst logg ut og bruk "Glemt passordet?" funksjonen på innloggingssiden.
                 </p>
-                <Button 
-                  variant="outline" 
-                  onClick={handlePasswordReset}
-                  disabled={isResettingPassword}
-                  className="w-full"
-                >
-                  {isResettingPassword ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Sender e-post...
-                    </>
-                  ) : (
-                    "Send tilbakestillings-e-post"
-                  )}
-                </Button>
               </div>
 
               <Separator />
