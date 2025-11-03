@@ -162,11 +162,6 @@ const Product = () => {
             <h2 className="text-2xl font-bold mb-6">Nye priser</h2>
             <div className="grid md:grid-cols-3 gap-4">
               {newOffers.map((offer) => {
-                // Clean URL by removing 'reklame' parameter
-                const cleanUrl = offer.url 
-                  ? offer.url.replace(/[?&]reklame[^&]*/, '').replace(/\?&/, '?').replace(/\?$/, '')
-                  : "#";
-                
                 return (
                   <Card key={offer.id} className="hover:shadow-lg transition-shadow">
                     <CardHeader>
@@ -177,12 +172,18 @@ const Product = () => {
                     </CardHeader>
                     <CardContent>
                       <p className="text-3xl font-bold mb-4">{offer.price.toLocaleString('nb-NO')} kr</p>
-                      <Button className="w-full" asChild disabled={!offer.url}>
-                        <a href={cleanUrl} target="_blank" rel="noopener noreferrer">
-                          Se tilbud
-                          <ExternalLink className="ml-2 h-4 w-4" />
-                        </a>
-                      </Button>
+                      {offer.url ? (
+                        <Button className="w-full" asChild>
+                          <a href={offer.url} target="_blank" rel="noopener noreferrer">
+                            Se tilbud
+                            <ExternalLink className="ml-2 h-4 w-4" />
+                          </a>
+                        </Button>
+                      ) : (
+                        <Button className="w-full" disabled>
+                          Ingen link tilgjengelig
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
                 );
