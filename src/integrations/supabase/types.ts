@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_cache: {
+        Row: {
+          cache_key: string
+          created_at: string
+          expires_at: string
+          result: Json
+        }
+        Insert: {
+          cache_key: string
+          created_at?: string
+          expires_at?: string
+          result: Json
+        }
+        Update: {
+          cache_key?: string
+          created_at?: string
+          expires_at?: string
+          result?: Json
+        }
+        Relationships: []
+      }
+      ai_jobs: {
+        Row: {
+          cache_key: string | null
+          created_at: string
+          error: string | null
+          id: string
+          kind: string
+          payload: Json
+          processed_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cache_key?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          kind: string
+          payload: Json
+          processed_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cache_key?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          kind?: string
+          payload?: Json
+          processed_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       merchant_offers: {
         Row: {
           condition: string
@@ -55,6 +112,48 @@ export type Database = {
           },
         ]
       }
+      normalized_offers: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          id: string
+          merchant_offer_id: string | null
+          normalized_product_id: string | null
+          reason: string | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          merchant_offer_id?: string | null
+          normalized_product_id?: string | null
+          reason?: string | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          merchant_offer_id?: string | null
+          normalized_product_id?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "normalized_offers_merchant_offer_id_fkey"
+            columns: ["merchant_offer_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "normalized_offers_normalized_product_id_fkey"
+            columns: ["normalized_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       price_alerts: {
         Row: {
           created_at: string
@@ -89,6 +188,76 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "price_alerts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_history: {
+        Row: {
+          condition: string
+          id: string
+          merchant_name: string
+          price: number
+          product_id: string | null
+          scraped_at: string
+        }
+        Insert: {
+          condition: string
+          id?: string
+          merchant_name: string
+          price: number
+          product_id?: string | null
+          scraped_at?: string
+        }
+        Update: {
+          condition?: string
+          id?: string
+          merchant_name?: string
+          price?: number
+          product_id?: string | null
+          scraped_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_history_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_attributes: {
+        Row: {
+          attribute_key: string
+          attribute_value: string
+          created_at: string
+          id: string
+          product_id: string | null
+          source: string | null
+        }
+        Insert: {
+          attribute_key: string
+          attribute_value: string
+          created_at?: string
+          id?: string
+          product_id?: string | null
+          source?: string | null
+        }
+        Update: {
+          attribute_key?: string
+          attribute_value?: string
+          created_at?: string
+          id?: string
+          product_id?: string | null
+          source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_attributes_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"

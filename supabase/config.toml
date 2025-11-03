@@ -1,5 +1,8 @@
 project_id = "yfutdebllhsawqzihysx"
 
+[functions.ai-worker]
+verify_jwt = false
+
 [functions.check-price-alerts]
 verify_jwt = false
 

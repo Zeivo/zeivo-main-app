@@ -215,14 +215,42 @@ serve(async (req: Request) => {
           condition: sp.condition,
         }));
 
-        const { error: insertError } = await supabase
+        const { data: insertedOffers, error: insertError } = await supabase
           .from("merchant_offers")
-          .insert(offersToInsert);
+          .insert(offersToInsert)
+          .select();
 
         if (insertError) {
           console.error(`Error inserting offers for ${product.name}:`, insertError);
         } else {
           console.log(`Inserted ${scrapedPrices.length} offers for ${product.name}`);
+          
+          // Create AI jobs to normalize offers
+          const aiJobs = insertedOffers?.map((offer: any) => ({
+            kind: 'normalize_offer',
+            payload: {
+              merchant_offer_id: offer.id,
+              merchant_title: `${product.name}`,
+              merchant_name: offer.merchant_name,
+              price: offer.price,
+              url: offer.url,
+              candidates: [{ product_id: product.id, name: product.name }]
+            },
+            cache_key: `normalize_${offer.merchant_name}_${product.slug}`,
+            status: 'pending'
+          }));
+          
+          if (aiJobs && aiJobs.length > 0) {
+            const { error: jobError } = await supabase
+              .from('ai_jobs')
+              .insert(aiJobs);
+            
+            if (jobError) {
+              console.error(`Error creating AI jobs:`, jobError);
+            } else {
+              console.log(`Created ${aiJobs.length} AI normalization jobs`);
+            }
+          }
         }
 
         // Update product with new price range
