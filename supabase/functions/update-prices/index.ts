@@ -114,8 +114,17 @@ async function fetchProductImage(productName: string): Promise<UnsplashPhotoData
   try {
     console.log(`Fetching image from Unsplash for: ${productName}...`);
     
+    // Clean up product name and add "product" keyword for better results
+    const cleanName = productName
+      .replace(/\(.*?\)/g, '') // Remove parentheses and content
+      .replace(/\d+\.\s*generasjon/gi, '') // Remove generation info
+      .trim();
+    
+    const searchQuery = `${cleanName} product white background`;
+    console.log(`Unsplash search query: ${searchQuery}`);
+    
     const response = await fetch(
-      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(productName)}&per_page=1&orientation=squarish`,
+      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=1&orientation=squarish&content_filter=high`,
       {
         headers: {
           "Authorization": `Client-ID ${unsplashAccessKey}`,
