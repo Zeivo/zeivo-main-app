@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Sparkles, Heart, TrendingDown, LogIn, Shield } from "lucide-react";
+import { Search, Sparkles, Heart, TrendingDown, LogIn, Shield, User } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
@@ -51,7 +51,11 @@ const Index = () => {
           <h1 className="text-xl font-bold text-foreground">Zeivo</h1>
           {user ? (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground">{user.email}</span>
+              <span className="text-sm text-muted-foreground hidden md:inline">{user.email}</span>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/profile')}>
+                <User className="h-4 w-4 mr-2" />
+                Profil
+              </Button>
               {isAdmin && (
                 <Button variant="ghost" size="sm" onClick={() => navigate('/admin')}>
                   <Shield className="h-4 w-4 mr-2" />
