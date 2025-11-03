@@ -146,7 +146,16 @@ const Product = () => {
                   <Card key={offer.id} className="hover:shadow-lg transition-shadow">
                     <CardHeader>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-3xl">🏪</span>
+                        {offer.url && (
+                          <img 
+                            src={`https://www.google.com/s2/favicons?domain=${new URL(offer.url).hostname}&sz=64`}
+                            alt={`${offer.merchant_name} favicon`}
+                            className="h-8 w-8"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        )}
                       </div>
                       <CardTitle className="text-lg">{offer.merchant_name}</CardTitle>
                     </CardHeader>
