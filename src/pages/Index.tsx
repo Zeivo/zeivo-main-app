@@ -11,7 +11,7 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { data: products = [], isLoading } = useProducts();
+  const { data: products = [], isLoading, error } = useProducts();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +100,14 @@ const Index = () => {
         {isLoading ? (
           <div className="flex justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Kunne ikke laste produkter. Prøv igjen senere.</p>
+          </div>
+        ) : featuredProducts.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Ingen produkter tilgjengelig for øyeblikket.</p>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
