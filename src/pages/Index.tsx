@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Sparkles, Heart, TrendingDown, LogIn, Loader2 } from "lucide-react";
+import { Search, Sparkles, Heart, TrendingDown, LogIn, Loader2, ExternalLink, Store } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -122,10 +122,12 @@ const Index = () => {
               return (
                 <Card 
                   key={product.id} 
-                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => navigate(`/produkt/${product.slug}`)}
+                  className="overflow-hidden hover:shadow-lg transition-shadow"
                 >
-                  <div className="aspect-video overflow-hidden bg-muted">
+                  <div 
+                    className="aspect-video overflow-hidden bg-muted cursor-pointer"
+                    onClick={() => navigate(`/produkt/${product.slug}`)}
+                  >
                     <img 
                       src={product.image} 
                       alt={product.name}
@@ -133,14 +135,16 @@ const Index = () => {
                     />
                   </div>
                   <CardHeader>
-                    <CardTitle>{product.name}</CardTitle>
+                    <CardTitle className="cursor-pointer hover:text-accent transition-colors" onClick={() => navigate(`/produkt/${product.slug}`)}>
+                      {product.name}
+                    </CardTitle>
                     {savings > 0 && (
                       <CardDescription>
                         Spar {savings.toLocaleString('nb-NO')} kr ({savingsPercent}%)
                       </CardDescription>
                     )}
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-4">
                     <div className="flex justify-between items-center">
                       {product.new_price_low && (
                         <div>
@@ -154,6 +158,31 @@ const Index = () => {
                           <p className="text-xl font-bold text-accent">{product.used_price_low.toLocaleString('nb-NO')} kr</p>
                         </div>
                       )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={() => navigate(`/produkt/${product.slug}`)}
+                      >
+                        <Store className="h-4 w-4 mr-2" />
+                        Se butikker
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        className="flex-1"
+                        asChild
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <a 
+                          href={`https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(product.name)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Finn.no
+                          <ExternalLink className="h-4 w-4 ml-2" />
+                        </a>
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
