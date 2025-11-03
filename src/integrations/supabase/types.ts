@@ -71,126 +71,49 @@ export type Database = {
         }
         Relationships: []
       }
-      merchant_offers: {
+      merchant_listings: {
         Row: {
           condition: string
+          confidence: number | null
           created_at: string
           id: string
           merchant_name: string
           price: number
-          product_id: string
+          scraped_at: string
           updated_at: string
           url: string | null
+          variant_id: string
         }
         Insert: {
           condition: string
+          confidence?: number | null
           created_at?: string
           id?: string
           merchant_name: string
           price: number
-          product_id: string
+          scraped_at?: string
           updated_at?: string
           url?: string | null
+          variant_id: string
         }
         Update: {
           condition?: string
+          confidence?: number | null
           created_at?: string
           id?: string
           merchant_name?: string
           price?: number
-          product_id?: string
+          scraped_at?: string
           updated_at?: string
           url?: string | null
+          variant_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "merchant_offers_product_id_fkey"
-            columns: ["product_id"]
+            foreignKeyName: "merchant_listings_variant_id_fkey"
+            columns: ["variant_id"]
             isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      normalized_offers: {
-        Row: {
-          confidence: number | null
-          created_at: string
-          id: string
-          merchant_offer_id: string | null
-          normalized_product_id: string | null
-          reason: string | null
-        }
-        Insert: {
-          confidence?: number | null
-          created_at?: string
-          id?: string
-          merchant_offer_id?: string | null
-          normalized_product_id?: string | null
-          reason?: string | null
-        }
-        Update: {
-          confidence?: number | null
-          created_at?: string
-          id?: string
-          merchant_offer_id?: string | null
-          normalized_product_id?: string | null
-          reason?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "normalized_offers_merchant_offer_id_fkey"
-            columns: ["merchant_offer_id"]
-            isOneToOne: false
-            referencedRelation: "merchant_offers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "normalized_offers_normalized_product_id_fkey"
-            columns: ["normalized_product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      price_alerts: {
-        Row: {
-          created_at: string
-          email: string
-          id: string
-          is_active: boolean
-          product_id: string
-          target_price: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          email: string
-          id?: string
-          is_active?: boolean
-          product_id: string
-          target_price: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          email?: string
-          id?: string
-          is_active?: boolean
-          product_id?: string
-          target_price?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "price_alerts_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
+            referencedRelation: "product_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -220,44 +143,51 @@ export type Database = {
           product_id?: string | null
           scraped_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "price_history_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      product_attributes: {
+      product_variants: {
         Row: {
-          attribute_key: string
-          attribute_value: string
+          availability: string | null
+          color: string | null
+          confidence: number | null
           created_at: string
           id: string
-          product_id: string | null
-          source: string | null
+          model: string | null
+          price_new: number | null
+          price_used: number | null
+          product_id: string
+          storage_gb: number | null
+          updated_at: string
         }
         Insert: {
-          attribute_key: string
-          attribute_value: string
+          availability?: string | null
+          color?: string | null
+          confidence?: number | null
           created_at?: string
           id?: string
-          product_id?: string | null
-          source?: string | null
+          model?: string | null
+          price_new?: number | null
+          price_used?: number | null
+          product_id: string
+          storage_gb?: number | null
+          updated_at?: string
         }
         Update: {
-          attribute_key?: string
-          attribute_value?: string
+          availability?: string | null
+          color?: string | null
+          confidence?: number | null
           created_at?: string
           id?: string
-          product_id?: string | null
-          source?: string | null
+          model?: string | null
+          price_new?: number | null
+          price_used?: number | null
+          product_id?: string
+          storage_gb?: number | null
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "product_attributes_product_id_fkey"
+            foreignKeyName: "product_variants_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
@@ -270,40 +200,28 @@ export type Database = {
           category: string
           created_at: string
           id: string
-          image: string
+          image: string | null
           name: string
-          new_price_high: number | null
-          new_price_low: number | null
           slug: string
           updated_at: string
-          used_price_high: number | null
-          used_price_low: number | null
         }
         Insert: {
           category: string
           created_at?: string
           id?: string
-          image: string
+          image?: string | null
           name: string
-          new_price_high?: number | null
-          new_price_low?: number | null
           slug: string
           updated_at?: string
-          used_price_high?: number | null
-          used_price_low?: number | null
         }
         Update: {
           category?: string
           created_at?: string
           id?: string
-          image?: string
+          image?: string | null
           name?: string
-          new_price_high?: number | null
-          new_price_low?: number | null
           slug?: string
           updated_at?: string
-          used_price_high?: number | null
-          used_price_low?: number | null
         }
         Relationships: []
       }

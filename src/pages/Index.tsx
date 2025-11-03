@@ -1,22 +1,22 @@
+import { useProducts } from "@/hooks/useProducts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Sparkles, Heart, TrendingDown, LogIn, Loader2, ExternalLink, Store } from "lucide-react";
+import { Search, Sparkles, Heart, TrendingDown, LogIn } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useProducts } from "@/hooks/useProducts";
 
 const Index = () => {
+  const { data: products = [], isLoading } = useProducts();
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { data: products = [], isLoading, error } = useProducts();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      // Find matching product by name
       const matchingProduct = products.find(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
@@ -26,9 +26,6 @@ const Index = () => {
       }
     }
   };
-
-  // Get featured products (first 2)
-  const featuredProducts = products.slice(0, 2);
 
   return (
     <div className="min-h-screen bg-background">
@@ -73,7 +70,7 @@ const Index = () => {
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Søk etter produkt (prøv 'iPhone' eller 'AirPods')"
+                  placeholder="Søk etter produkt"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-12 h-14 text-lg rounded-2xl"
@@ -94,100 +91,47 @@ const Index = () => {
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-accent/5 to-transparent" />
       </section>
 
-      {/* Featured Products */}
+      {/* Products Section */}
       <section className="container mx-auto px-4 py-16">
-        <h2 className="text-3xl font-bold mb-8 text-center">Populære produkter</h2>
+        <h2 className="text-3xl font-bold mb-8 text-center">Produkter</h2>
+        
         {isLoading ? (
-          <div className="flex justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : error ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">Kunne ikke laste produkter. Prøv igjen senere.</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Laster produkter...</p>
           </div>
-        ) : featuredProducts.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Ingen produkter tilgjengelig for øyeblikket.</p>
-          </div>
+        ) : products.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-center text-muted-foreground">
+                Ingen produkter tilgjengelig ennå. Produkter vil bli lagt til snart.
+              </p>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {featuredProducts.map((product) => {
-              const savings = product.new_price_low && product.used_price_high 
-                ? product.new_price_low - product.used_price_high 
-                : 0;
-              const savingsPercent = product.new_price_low && savings
-                ? Math.round((savings / product.new_price_low) * 100)
-                : 0;
-              
-              return (
-                <Card 
-                  key={product.id} 
-                  className="overflow-hidden hover:shadow-lg transition-shadow"
-                >
-                  <div 
-                    className="aspect-video overflow-hidden bg-muted cursor-pointer"
-                    onClick={() => navigate(`/produkt/${product.slug}`)}
-                  >
-                    <img 
-                      src={product.image} 
-                      alt={product.name}
-                      className="w-full h-full object-cover hover:scale-105 transition-transform"
-                    />
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {products.map((product) => (
+              <Link key={product.id} to={`/produkt/${product.slug}`}>
+                <Card className="hover:shadow-lg transition-shadow h-full">
                   <CardHeader>
-                    <CardTitle className="cursor-pointer hover:text-accent transition-colors" onClick={() => navigate(`/produkt/${product.slug}`)}>
-                      {product.name}
-                    </CardTitle>
-                    {savings > 0 && (
-                      <CardDescription>
-                        Spar {savings.toLocaleString('nb-NO')} kr ({savingsPercent}%)
-                      </CardDescription>
+                    {product.image && (
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full h-48 object-cover rounded-md mb-4"
+                      />
                     )}
+                    <Badge className="w-fit mb-2">{product.category}</Badge>
+                    <CardTitle>{product.name}</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      {product.new_price_low && (
-                        <div>
-                          <p className="text-sm text-muted-foreground">Nytt fra</p>
-                          <p className="text-xl font-bold">{product.new_price_low.toLocaleString('nb-NO')} kr</p>
-                        </div>
-                      )}
-                      {product.used_price_low && (
-                        <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Brukt fra</p>
-                          <p className="text-xl font-bold text-accent">{product.used_price_low.toLocaleString('nb-NO')} kr</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        className="flex-1"
-                        onClick={() => navigate(`/produkt/${product.slug}`)}
-                      >
-                        <Store className="h-4 w-4 mr-2" />
-                        Se butikker
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        className="flex-1"
-                        asChild
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <a 
-                          href={`https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(product.name)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Finn.no
-                          <ExternalLink className="h-4 w-4 ml-2" />
-                        </a>
-                      </Button>
-                    </div>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Klikk for å se varianter og priser
+                    </p>
                   </CardContent>
                 </Card>
-              );
-            })}
+              </Link>
+            ))}
           </div>
         )}
       </section>

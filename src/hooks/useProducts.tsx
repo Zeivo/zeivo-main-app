@@ -4,21 +4,38 @@ import { supabase } from "@/integrations/supabase/client";
 export interface Product {
   id: string;
   name: string;
-  image: string;
+  image: string | null;
   category: string;
   slug: string;
-  new_price_low: number | null;
-  new_price_high: number | null;
-  used_price_low: number | null;
-  used_price_high: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface MerchantOffer {
+export interface ProductVariant {
   id: string;
+  product_id: string;
+  storage_gb: number | null;
+  color: string | null;
+  model: string | null;
+  price_new: number | null;
+  price_used: number | null;
+  availability: string;
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MerchantListing {
+  id: string;
+  variant_id: string;
   merchant_name: string;
-  price: number;
   url: string | null;
+  price: number;
   condition: string;
+  confidence: number;
+  scraped_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export const useProducts = () => {
@@ -55,21 +72,40 @@ export const useProduct = (slug: string | undefined) => {
   });
 };
 
-export const useProductOffers = (productId: string | undefined) => {
+export const useProductVariants = (productId: string | undefined) => {
   return useQuery({
-    queryKey: ["product-offers", productId],
+    queryKey: ["product-variants", productId],
     queryFn: async () => {
       if (!productId) return [];
 
       const { data, error } = await supabase
-        .from("merchant_offers")
+        .from("product_variants")
         .select("*")
         .eq("product_id", productId)
+        .order("storage_gb");
+
+      if (error) throw error;
+      return data as ProductVariant[];
+    },
+    enabled: !!productId,
+  });
+};
+
+export const useVariantListings = (variantId: string | undefined) => {
+  return useQuery({
+    queryKey: ["variant-listings", variantId],
+    queryFn: async () => {
+      if (!variantId) return [];
+
+      const { data, error } = await supabase
+        .from("merchant_listings")
+        .select("*")
+        .eq("variant_id", variantId)
         .order("price");
 
       if (error) throw error;
-      return data as MerchantOffer[];
+      return data as MerchantListing[];
     },
-    enabled: !!productId,
+    enabled: !!variantId,
   });
 };
