@@ -274,9 +274,6 @@ export type Database = {
           name: string
           new_price_high: number | null
           new_price_low: number | null
-          photo_download_location: string | null
-          photographer_name: string | null
-          photographer_username: string | null
           slug: string
           updated_at: string
           used_price_high: number | null
@@ -290,9 +287,6 @@ export type Database = {
           name: string
           new_price_high?: number | null
           new_price_low?: number | null
-          photo_download_location?: string | null
-          photographer_name?: string | null
-          photographer_username?: string | null
           slug: string
           updated_at?: string
           used_price_high?: number | null
@@ -306,9 +300,6 @@ export type Database = {
           name?: string
           new_price_high?: number | null
           new_price_low?: number | null
-          photo_download_location?: string | null
-          photographer_name?: string | null
-          photographer_username?: string | null
           slug?: string
           updated_at?: string
           used_price_high?: number | null

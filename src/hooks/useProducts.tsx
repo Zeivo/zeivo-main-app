@@ -11,9 +11,6 @@ export interface Product {
   new_price_high: number | null;
   used_price_low: number | null;
   used_price_high: number | null;
-  photographer_name: string | null;
-  photographer_username: string | null;
-  photo_download_location: string | null;
 }
 
 export interface MerchantOffer {
