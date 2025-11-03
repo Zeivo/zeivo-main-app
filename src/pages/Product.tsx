@@ -115,12 +115,15 @@ const Product = () => {
       <main className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Product Header */}
         <div className="grid md:grid-cols-2 gap-8 mb-12">
-          <div className="aspect-square rounded-2xl overflow-hidden bg-muted">
+          <div className="aspect-square rounded-2xl overflow-hidden bg-muted relative">
             <img 
               src={product.image} 
               alt={product.name}
               className="w-full h-full object-cover"
             />
+            <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+              Photo by <a href="https://unsplash.com" target="_blank" rel="noopener noreferrer" className="underline">Unsplash</a>
+            </div>
           </div>
           
           <div className="flex flex-col justify-center">
