@@ -118,6 +118,33 @@ export type Database = {
           },
         ]
       }
+      merchants: {
+        Row: {
+          created_at: string
+          id: string
+          logo_url: string | null
+          name: string
+          region: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          name: string
+          region?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          name?: string
+          region?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       price_history: {
         Row: {
           condition: string
@@ -151,11 +178,15 @@ export type Database = {
           color: string | null
           confidence: number | null
           created_at: string
+          ean: string | null
           id: string
+          image_url: string | null
           model: string | null
+          mpn: string | null
           price_new: number | null
           price_used: number | null
           product_id: string
+          sku: string | null
           storage_gb: number | null
           updated_at: string
         }
@@ -164,11 +195,15 @@ export type Database = {
           color?: string | null
           confidence?: number | null
           created_at?: string
+          ean?: string | null
           id?: string
+          image_url?: string | null
           model?: string | null
+          mpn?: string | null
           price_new?: number | null
           price_used?: number | null
           product_id: string
+          sku?: string | null
           storage_gb?: number | null
           updated_at?: string
         }
@@ -177,11 +212,15 @@ export type Database = {
           color?: string | null
           confidence?: number | null
           created_at?: string
+          ean?: string | null
           id?: string
+          image_url?: string | null
           model?: string | null
+          mpn?: string | null
           price_new?: number | null
           price_used?: number | null
           product_id?: string
+          sku?: string | null
           storage_gb?: number | null
           updated_at?: string
         }
@@ -197,28 +236,37 @@ export type Database = {
       }
       products: {
         Row: {
+          brand: string | null
           category: string
           created_at: string
+          family: string | null
           id: string
           image: string | null
+          model: string | null
           name: string
           slug: string
           updated_at: string
         }
         Insert: {
+          brand?: string | null
           category: string
           created_at?: string
+          family?: string | null
           id?: string
           image?: string | null
+          model?: string | null
           name: string
           slug: string
           updated_at?: string
         }
         Update: {
+          brand?: string | null
           category?: string
           created_at?: string
+          family?: string | null
           id?: string
           image?: string | null
+          model?: string | null
           name?: string
           slug?: string
           updated_at?: string
