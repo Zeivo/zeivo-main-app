@@ -96,73 +96,7 @@ async function scrapePrice(url: string, merchantName: string, productName: strin
   }
 }
 
-interface UnsplashPhotoData {
-  imageUrl: string;
-  photographerName: string;
-  photographerUsername: string;
-  downloadLocation: string;
-}
-
-async function fetchProductImage(productName: string): Promise<UnsplashPhotoData | null> {
-  const unsplashAccessKey = Deno.env.get("UNSPLASH_ACCESS_KEY");
-  
-  if (!unsplashAccessKey) {
-    console.log("Unsplash access key not configured, skipping image fetch");
-    return null;
-  }
-
-  try {
-    console.log(`Fetching image from Unsplash for: ${productName}...`);
-    
-    // Clean up product name and add "product" keyword for better results
-    const cleanName = productName
-      .replace(/\(.*?\)/g, '') // Remove parentheses and content
-      .replace(/\d+\.\s*generasjon/gi, '') // Remove generation info
-      .trim();
-    
-    const searchQuery = `${cleanName} product white background`;
-    console.log(`Unsplash search query: ${searchQuery}`);
-    
-    const response = await fetch(
-      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=1&orientation=squarish&content_filter=high`,
-      {
-        headers: {
-          "Authorization": `Client-ID ${unsplashAccessKey}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      console.error("Unsplash API error:", await response.text());
-      return null;
-    }
-
-    const data = await response.json();
-    
-    if (data.results && data.results.length > 0) {
-      const photo = data.results[0];
-      const imageUrl = photo.urls.regular;
-      const photographerName = photo.user.name;
-      const photographerUsername = photo.user.username;
-      const downloadLocation = photo.links.download_location;
-      
-      console.log(`Found image from Unsplash by ${photographerName}: ${imageUrl}`);
-      
-      return {
-        imageUrl,
-        photographerName,
-        photographerUsername,
-        downloadLocation,
-      };
-    }
-
-    console.log("No images found on Unsplash");
-    return null;
-  } catch (error) {
-    console.error("Error fetching image from Unsplash:", error);
-    return null;
-  }
-}
+// Unsplash functionality removed - using direct Apple product images instead
 
 async function scrapeFinnNo(productName: string): Promise<{ low: number; high: number } | null> {
   const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY");
@@ -305,19 +239,7 @@ serve(async (req: Request) => {
           .eq("id", product.id);
       }
 
-      // Fetch product image from Unsplash
-      const photoData = await fetchProductImage(product.name);
-      if (photoData) {
-        await supabase
-          .from("products")
-          .update({ 
-            image: photoData.imageUrl,
-            photographer_name: photoData.photographerName,
-            photographer_username: photoData.photographerUsername,
-            photo_download_location: photoData.downloadLocation,
-          })
-          .eq("id", product.id);
-      }
+      // Images are now set manually with high-quality Apple product images
 
       // Scrape Finn.no for used prices
       const usedPrices = await scrapeFinnNo(product.name);
