@@ -96,7 +96,14 @@ async function scrapePrice(url: string, merchantName: string, productName: strin
   }
 }
 
-async function fetchProductImage(productName: string): Promise<string | null> {
+interface UnsplashPhotoData {
+  imageUrl: string;
+  photographerName: string;
+  photographerUsername: string;
+  downloadLocation: string;
+}
+
+async function fetchProductImage(productName: string): Promise<UnsplashPhotoData | null> {
   const unsplashAccessKey = Deno.env.get("UNSPLASH_ACCESS_KEY");
   
   if (!unsplashAccessKey) {
@@ -124,9 +131,20 @@ async function fetchProductImage(productName: string): Promise<string | null> {
     const data = await response.json();
     
     if (data.results && data.results.length > 0) {
-      const imageUrl = data.results[0].urls.regular;
-      console.log(`Found image from Unsplash: ${imageUrl}`);
-      return imageUrl;
+      const photo = data.results[0];
+      const imageUrl = photo.urls.regular;
+      const photographerName = photo.user.name;
+      const photographerUsername = photo.user.username;
+      const downloadLocation = photo.links.download_location;
+      
+      console.log(`Found image from Unsplash by ${photographerName}: ${imageUrl}`);
+      
+      return {
+        imageUrl,
+        photographerName,
+        photographerUsername,
+        downloadLocation,
+      };
     }
 
     console.log("No images found on Unsplash");
@@ -279,11 +297,16 @@ serve(async (req: Request) => {
       }
 
       // Fetch product image from Unsplash
-      const imageUrl = await fetchProductImage(product.name);
-      if (imageUrl) {
+      const photoData = await fetchProductImage(product.name);
+      if (photoData) {
         await supabase
           .from("products")
-          .update({ image: imageUrl })
+          .update({ 
+            image: photoData.imageUrl,
+            photographer_name: photoData.photographerName,
+            photographer_username: photoData.photographerUsername,
+            photo_download_location: photoData.downloadLocation,
+          })
           .eq("id", product.id);
       }
 

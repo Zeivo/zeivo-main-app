@@ -122,7 +122,24 @@ const Product = () => {
               className="w-full h-full object-cover"
             />
             <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-              Photo by <a href="https://unsplash.com" target="_blank" rel="noopener noreferrer" className="underline">Unsplash</a>
+              Photo by{" "}
+              <a 
+                href={`https://unsplash.com/@${product.photographer_username || 'unsplash'}?utm_source=zeivo&utm_medium=referral`}
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="underline hover:text-white/80"
+              >
+                {product.photographer_name || 'Unsplash'}
+              </a>
+              {" "}on{" "}
+              <a 
+                href="https://unsplash.com?utm_source=zeivo&utm_medium=referral"
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="underline hover:text-white/80"
+              >
+                Unsplash
+              </a>
             </div>
           </div>
           
