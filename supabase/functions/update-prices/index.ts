@@ -10,146 +10,218 @@ interface Product {
   id: string;
   name: string;
   slug: string;
+  category: string;
 }
 
-interface ScrapedPrice {
+interface ScrapedListing {
   merchant_name: string;
-  price: number;
   url: string;
-  condition: string;
+  price: number;
+  variant_info: {
+    storage_gb?: number;
+    color?: string;
+    model?: string;
+  };
+  condition: 'new' | 'used';
+  confidence: number;
 }
 
-// Store URLs to scrape - in production, these would be in the database
+// Norwegian retailers to scrape
 const STORE_SEARCH_URLS: Record<string, (productName: string) => string> = {
-  'Elkjøp': (name) => `https://www.elkjop.no/search?SearchTerm=${encodeURIComponent(name)}`,
   'Komplett': (name) => `https://www.komplett.no/search?q=${encodeURIComponent(name)}`,
+  'Elkjøp': (name) => `https://www.elkjop.no/search?SearchTerm=${encodeURIComponent(name)}`,
   'Power': (name) => `https://www.power.no/search/?q=${encodeURIComponent(name)}`,
   'NetOnNet': (name) => `https://www.netonnet.no/search?q=${encodeURIComponent(name)}`,
 };
 
-async function scrapePrice(url: string, merchantName: string, productName: string): Promise<ScrapedPrice | null> {
-  const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY");
-  
+async function scrapeWithFirecrawl(url: string): Promise<any> {
+  const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
+  if (!firecrawlApiKey) {
+    console.error('FIRECRAWL_API_KEY not configured');
+    return null;
+  }
+
   try {
-    console.log(`Scraping ${merchantName} for ${productName}...`);
-    
-    // Use Firecrawl to scrape the page
-    const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
+    console.log(`Scraping URL: ${url}`);
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
       headers: {
-        "Authorization": `Bearer ${firecrawlApiKey}`,
-        "Content-Type": "application/json",
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        url: url,
-        formats: ["markdown"],
+        url,
+        formats: ['markdown', 'html'],
+        onlyMainContent: true,
       }),
     });
 
     if (!response.ok) {
-      console.error(`Firecrawl error for ${merchantName}:`, await response.text());
+      console.error(`Firecrawl error: ${response.status} ${response.statusText}`);
       return null;
     }
 
     const data = await response.json();
-    const markdown = data.data?.markdown || "";
-    
-    // Extract price from markdown using regex patterns
-    // Norwegian stores typically show prices like "13 990 kr" or "13.990,-"
-    const pricePatterns = [
-      /(\d{1,3}[\s.]?\d{3}[\s.]?\d{3})\s*kr/i,  // 13 990 kr or 13.990 kr
-      /(\d{1,3}[\s.]?\d{3})\s*kr/i,             // 990 kr or 13 990 kr
-      /kr\s*(\d{1,3}[\s.]?\d{3}[\s.]?\d{3})/i,  // kr 13 990
-      /(\d{1,3}[\s.]?\d{3}[\s.]?\d{3}),-/i,     // 13.990,-
-    ];
-
-    let extractedPrice: number | null = null;
-
-    for (const pattern of pricePatterns) {
-      const match = markdown.match(pattern);
-      if (match) {
-        // Remove spaces and dots, convert to number
-        const priceStr = match[1].replace(/[\s.]/g, "");
-        extractedPrice = parseInt(priceStr, 10);
-        if (extractedPrice > 0) {
-          break;
-        }
-      }
-    }
-
-    if (!extractedPrice) {
-      console.log(`No price found for ${merchantName}`);
-      return null;
-    }
-
-    console.log(`Found price at ${merchantName}: ${extractedPrice} kr`);
-
-    return {
-      merchant_name: merchantName,
-      price: extractedPrice,
-      url: url,
-      condition: "new",
-    };
+    return data;
   } catch (error) {
-    console.error(`Error scraping ${merchantName}:`, error);
+    console.error('Firecrawl scraping error:', error);
     return null;
   }
 }
 
-// Unsplash functionality removed - using direct Apple product images instead
+function extractVariantFromText(text: string, productName: string): {
+  storage_gb?: number;
+  color?: string;
+  price?: number;
+} {
+  const result: any = {};
 
-async function scrapeFinnNo(productName: string): Promise<{ low: number; high: number } | null> {
-  const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY");
-  const searchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(productName)}`;
-
-  try {
-    console.log(`Scraping Finn.no for used prices: ${productName}...`);
-
-    const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${firecrawlApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url: searchUrl,
-        formats: ["markdown"],
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("Firecrawl error for Finn.no:", await response.text());
-      return null;
+  // Extract storage (e.g., "128GB", "256 GB", "1TB")
+  const storageMatch = text.match(/(\d+)\s*(GB|TB)/i);
+  if (storageMatch) {
+    let storage = parseInt(storageMatch[1]);
+    if (storageMatch[2].toUpperCase() === 'TB') {
+      storage *= 1024;
     }
-
-    const data = await response.json();
-    const markdown = data.data?.markdown || "";
-
-    // Extract all prices from listings
-    const pricePattern = /(\d{1,3}(?:[\s.]?\d{3})*)\s*kr/gi;
-    const matches = [...markdown.matchAll(pricePattern)];
-    const prices = matches
-      .map(m => parseInt(m[1].replace(/[\s.]/g, ""), 10))
-      .filter(p => p > 100 && p < 100000); // Filter out outliers
-
-    if (prices.length === 0) {
-      console.log("No used prices found on Finn.no");
-      return null;
-    }
-
-    prices.sort((a, b) => a - b);
-    
-    // Get 25th and 75th percentile for more realistic range
-    const low = prices[Math.floor(prices.length * 0.25)];
-    const high = prices[Math.floor(prices.length * 0.75)];
-
-    console.log(`Finn.no used price range: ${low} - ${high} kr`);
-
-    return { low, high };
-  } catch (error) {
-    console.error("Error scraping Finn.no:", error);
-    return null;
+    result.storage_gb = storage;
   }
+
+  // Extract color (common Norwegian color names)
+  const colors = [
+    'svart', 'black', 'obsidian', 'midnight',
+    'hvit', 'white', 'snow',
+    'blå', 'blue', 'bay',
+    'grønn', 'green', 
+    'rosa', 'pink', 'rose',
+    'lilla', 'purple', 'violet',
+    'gull', 'gold',
+    'sølv', 'silver',
+    'titan', 'titanium',
+    'natural',
+  ];
+  
+  const colorMatch = colors.find(color => 
+    text.toLowerCase().includes(color.toLowerCase())
+  );
+  if (colorMatch) {
+    result.color = colorMatch.charAt(0).toUpperCase() + colorMatch.slice(1);
+  }
+
+  // Extract price (Norwegian format: "kr 11.990", "11990,-", "11 990 kr")
+  const pricePatterns = [
+    /(\d{1,3}(?:[\s.]?\d{3})+)\s*kr/i,
+    /kr\s*(\d{1,3}(?:[\s.]?\d{3})+)/i,
+    /(\d{1,3}(?:[\s.]?\d{3})+),-/,
+  ];
+
+  for (const pattern of pricePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const priceStr = match[1].replace(/[^\d]/g, '');
+      const price = parseInt(priceStr);
+      if (price > 100 && price < 1000000) { // Sanity check
+        result.price = price;
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
+async function scrapeProductListings(
+  productName: string,
+  merchantName: string,
+  searchUrl: string
+): Promise<ScrapedListing[]> {
+  console.log(`Scraping ${merchantName} for ${productName}`);
+  
+  const scrapedData = await scrapeWithFirecrawl(searchUrl);
+  if (!scrapedData || !scrapedData.data) {
+    console.log(`No data from ${merchantName}`);
+    return [];
+  }
+
+  const listings: ScrapedListing[] = [];
+  const content = scrapedData.data.markdown || scrapedData.data.html || '';
+
+  // Split content into potential product blocks
+  const blocks = content.split(/\n\n+/);
+  
+  for (const block of blocks) {
+    // Check if this block mentions the product
+    const productWords = productName.toLowerCase().split(' ');
+    const blockLower = block.toLowerCase();
+    const matchCount = productWords.filter(word => blockLower.includes(word)).length;
+    
+    if (matchCount < 2) {
+      continue; // Need at least 2 words matching
+    }
+
+    const variantInfo = extractVariantFromText(block, productName);
+    
+    if (variantInfo.price) {
+      listings.push({
+        merchant_name: merchantName,
+        url: searchUrl,
+        price: variantInfo.price,
+        variant_info: {
+          storage_gb: variantInfo.storage_gb,
+          color: variantInfo.color,
+        },
+        condition: 'new',
+        confidence: 0.7, // Rule-based extraction has medium confidence
+      });
+    }
+  }
+
+  console.log(`Found ${listings.length} listings from ${merchantName}`);
+  return listings;
+}
+
+async function scrapeFinnNo(productName: string): Promise<{
+  listings: Array<{ price: number; title: string }>;
+  low?: number;
+  high?: number;
+}> {
+  const searchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(productName)}`;
+  
+  console.log(`Scraping Finn.no for used: ${productName}`);
+  const scrapedData = await scrapeWithFirecrawl(searchUrl);
+  
+  if (!scrapedData || !scrapedData.data) {
+    return { listings: [] };
+  }
+
+  const content = scrapedData.data.markdown || '';
+  const listings: Array<{ price: number; title: string }> = [];
+  
+  // Extract prices from Finn.no
+  const priceMatches = content.matchAll(/(\d{1,3}(?:[\s.]?\d{3})+)\s*kr/gi);
+  for (const match of priceMatches) {
+    const priceStr = match[1].replace(/[^\d]/g, '');
+    const price = parseInt(priceStr);
+    
+    if (price > 1000 && price < 100000) { // Sanity check for used prices
+      listings.push({ price, title: productName });
+    }
+  }
+
+  if (listings.length > 0) {
+    const prices = listings.map(l => l.price).sort((a, b) => a - b);
+    // Filter outliers using IQR method
+    const q1Index = Math.floor(prices.length * 0.25);
+    const q3Index = Math.floor(prices.length * 0.75);
+    const filteredPrices = prices.slice(q1Index, q3Index + 1);
+    
+    return {
+      listings,
+      low: Math.min(...filteredPrices),
+      high: Math.max(...filteredPrices),
+    };
+  }
+
+  return { listings: [] };
 }
 
 serve(async (req: Request) => {
@@ -163,150 +235,190 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    console.log("Starting price update...");
+    console.log('Starting price update job...');
 
-    // Get all products
+    // Fetch all products
     const { data: products, error: productsError } = await supabase
-      .from("products")
-      .select("id, name, slug");
+      .from('products')
+      .select('*');
 
     if (productsError) {
-      console.error("Error fetching products:", productsError);
       throw productsError;
     }
 
     console.log(`Found ${products?.length || 0} products to update`);
 
-    const updateResults = [];
+    const results = [];
 
-    for (const product of products as Product[]) {
-      console.log(`\nUpdating prices for: ${product.name}`);
+    for (const product of products || []) {
+      console.log(`\n=== Processing: ${product.name} ===`);
+
+      // Scrape new listings from retailers
+      const allNewListings: ScrapedListing[] = [];
       
-      const scrapedPrices: ScrapedPrice[] = [];
-
-      // Scrape from each store
-      for (const [storeName, urlGenerator] of Object.entries(STORE_SEARCH_URLS)) {
-        const storeUrl = urlGenerator(product.name);
-        const price = await scrapePrice(storeUrl, storeName, product.name);
+      for (const [merchantName, urlGenerator] of Object.entries(STORE_SEARCH_URLS)) {
+        const searchUrl = urlGenerator(product.name);
+        const listings = await scrapeProductListings(product.name, merchantName, searchUrl);
+        allNewListings.push(...listings);
         
-        if (price) {
-          scrapedPrices.push(price);
-        }
-
-        // Rate limiting - wait 2 seconds between requests
+        // Rate limiting - be nice to the scraped sites
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      // Update merchant offers if we found prices
-      if (scrapedPrices.length > 0) {
-        // Delete old offers for this product
-        await supabase
-          .from("merchant_offers")
-          .delete()
-          .eq("product_id", product.id)
-          .eq("condition", "new");
+      console.log(`Total listings found: ${allNewListings.length}`);
 
-        // Insert new offers
-        const offersToInsert = scrapedPrices.map(sp => ({
-          product_id: product.id,
-          merchant_name: sp.merchant_name,
-          price: sp.price,
-          url: sp.url,
-          condition: sp.condition,
-        }));
+      // Group listings by variant (storage + color)
+      const variantGroups = new Map<string, ScrapedListing[]>();
+      
+      for (const listing of allNewListings) {
+        const key = `${listing.variant_info.storage_gb || 'unknown'}-${listing.variant_info.color || 'unknown'}`;
+        if (!variantGroups.has(key)) {
+          variantGroups.set(key, []);
+        }
+        variantGroups.get(key)!.push(listing);
+      }
 
-        const { data: insertedOffers, error: insertError } = await supabase
-          .from("merchant_offers")
-          .insert(offersToInsert)
-          .select();
+      console.log(`Grouped into ${variantGroups.size} variants`);
 
-        if (insertError) {
-          console.error(`Error inserting offers for ${product.name}:`, insertError);
+      // Create or update variants
+      for (const [variantKey, listings] of variantGroups.entries()) {
+        const firstListing = listings[0];
+        const prices = listings.map(l => l.price);
+        const avgPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+        
+        console.log(`Processing variant: ${variantKey}, avg price: ${avgPrice}`);
+
+        // Check if variant exists
+        const { data: existingVariant } = await supabase
+          .from('product_variants')
+          .select('id')
+          .eq('product_id', product.id)
+          .eq('storage_gb', firstListing.variant_info.storage_gb || null)
+          .eq('color', firstListing.variant_info.color || null)
+          .maybeSingle();
+
+        let variantId: string;
+
+        if (existingVariant) {
+          // Update existing variant
+          const { data: updated } = await supabase
+            .from('product_variants')
+            .update({ 
+              price_new: avgPrice,
+              confidence: 0.8,
+            })
+            .eq('id', existingVariant.id)
+            .select('id')
+            .single();
+          
+          variantId = updated!.id;
+          console.log(`Updated variant ${variantId}`);
         } else {
-          console.log(`Inserted ${scrapedPrices.length} offers for ${product.name}`);
+          // Create new variant
+          const { data: created } = await supabase
+            .from('product_variants')
+            .insert({
+              product_id: product.id,
+              storage_gb: firstListing.variant_info.storage_gb,
+              color: firstListing.variant_info.color,
+              price_new: avgPrice,
+              confidence: 0.8,
+            })
+            .select('id')
+            .single();
           
-          // Create AI jobs to normalize offers
-          const aiJobs = insertedOffers?.map((offer: any) => ({
-            kind: 'normalize_offer',
-            payload: {
-              merchant_offer_id: offer.id,
-              merchant_title: `${product.name}`,
-              merchant_name: offer.merchant_name,
-              price: offer.price,
-              url: offer.url,
-              candidates: [{ product_id: product.id, name: product.name }]
-            },
-            cache_key: `normalize_${offer.merchant_name}_${product.slug}`,
-            status: 'pending'
-          }));
-          
-          if (aiJobs && aiJobs.length > 0) {
-            const { error: jobError } = await supabase
-              .from('ai_jobs')
-              .insert(aiJobs);
-            
-            if (jobError) {
-              console.error(`Error creating AI jobs:`, jobError);
-            } else {
-              console.log(`Created ${aiJobs.length} AI normalization jobs`);
-            }
-          }
+          variantId = created!.id;
+          console.log(`Created new variant ${variantId}`);
         }
 
-        // Update product with new price range
-        const prices = scrapedPrices.map(sp => sp.price);
-        const newPriceLow = Math.min(...prices);
-        const newPriceHigh = Math.max(...prices);
-
+        // Delete old merchant listings for this variant
         await supabase
-          .from("products")
-          .update({
-            new_price_low: newPriceLow,
-            new_price_high: newPriceHigh,
-          })
-          .eq("id", product.id);
+          .from('merchant_listings')
+          .delete()
+          .eq('variant_id', variantId)
+          .eq('condition', 'new');
+
+        // Insert new merchant listings
+        const listingsToInsert = listings.map(listing => ({
+          variant_id: variantId,
+          merchant_name: listing.merchant_name,
+          url: listing.url,
+          price: listing.price,
+          condition: listing.condition,
+          confidence: listing.confidence,
+        }));
+
+        if (listingsToInsert.length > 0) {
+          await supabase
+            .from('merchant_listings')
+            .insert(listingsToInsert);
+          
+          console.log(`Inserted ${listingsToInsert.length} merchant listings`);
+        }
+
+        // Create AI job for better disambiguation
+        await supabase
+          .from('ai_jobs')
+          .insert({
+            kind: 'disambiguate_variant',
+            payload: {
+              variant_id: variantId,
+              product_name: product.name,
+              listings: listingsToInsert,
+            },
+            status: 'pending',
+          });
       }
 
-      // Images are now set manually with high-quality Apple product images
-
-      // Scrape Finn.no for used prices
-      const usedPrices = await scrapeFinnNo(product.name);
-      if (usedPrices) {
+      // Scrape used prices from Finn.no
+      const finnData = await scrapeFinnNo(product.name);
+      
+      if (finnData.low && finnData.high) {
+        console.log(`Finn.no used prices: ${finnData.low} - ${finnData.high} kr`);
+        
+        // Update all variants with used price range
         await supabase
-          .from("products")
+          .from('product_variants')
           .update({
-            used_price_low: usedPrices.low,
-            used_price_high: usedPrices.high,
+            price_used: Math.round((finnData.low + finnData.high) / 2),
           })
-          .eq("id", product.id);
+          .eq('product_id', product.id);
       }
 
-      updateResults.push({
+      results.push({
         product: product.name,
-        new_offers: scrapedPrices.length,
-        used_price_found: !!usedPrices,
+        variants: variantGroups.size,
+        new_listings: allNewListings.length,
+        used_range: finnData.low && finnData.high ? [finnData.low, finnData.high] : null,
       });
 
-      // Wait before next product
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Rate limiting between products
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
+    console.log('\n=== Price update completed ===');
+
     return new Response(
-      JSON.stringify({
-        message: "Prices updated successfully",
-        results: updateResults,
+      JSON.stringify({ 
+        success: true,
+        results,
+        message: 'Price update completed',
       }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       }
     );
+
   } catch (error: any) {
-    console.error("Error in update-prices function:", error);
+    console.error('Error in update-prices:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      JSON.stringify({ 
+        success: false, 
+        error: error.message,
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500,
       }
     );
