@@ -230,7 +230,20 @@ const Index = () => {
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>© 2025 Zeivo — kjøp smart, spar bærekraftig</p>
           <p className="mt-2">Laget i Norge 🇳🇴</p>
-          <p className="mt-2">Kontakt: kontakt@zeivo.no</p>
+          <div className="mt-4 flex justify-center gap-6">
+            <button 
+              onClick={() => navigate('/support')} 
+              className="hover:text-foreground transition-colors"
+            >
+              Support & FAQ
+            </button>
+            <a 
+              href="mailto:kontakt@zeivo.no" 
+              className="hover:text-foreground transition-colors"
+            >
+              Kontakt
+            </a>
+          </div>
         </div>
       </footer>
     </div>
