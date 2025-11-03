@@ -141,26 +141,32 @@ const Product = () => {
           <section className="mb-12">
             <h2 className="text-2xl font-bold mb-6">Nye priser</h2>
             <div className="grid md:grid-cols-3 gap-4">
-              {newOffers.map((offer) => (
-                <Card key={offer.id} className="hover:shadow-lg transition-shadow">
-                  <CardHeader>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-3xl">🏪</span>
-                      <Badge variant="outline" className="text-xs">Reklame</Badge>
-                    </div>
-                    <CardTitle className="text-lg">{offer.merchant_name}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold mb-4">{offer.price.toLocaleString('nb-NO')} kr</p>
-                    <Button className="w-full" asChild disabled={!offer.url}>
-                      <a href={offer.url || "#"} target="_blank" rel="noopener noreferrer">
-                        Se tilbud
-                        <ExternalLink className="ml-2 h-4 w-4" />
-                      </a>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+              {newOffers.map((offer) => {
+                // Clean URL by removing 'reklame' parameter
+                const cleanUrl = offer.url 
+                  ? offer.url.replace(/[?&]reklame[^&]*/, '').replace(/\?&/, '?').replace(/\?$/, '')
+                  : "#";
+                
+                return (
+                  <Card key={offer.id} className="hover:shadow-lg transition-shadow">
+                    <CardHeader>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-3xl">🏪</span>
+                      </div>
+                      <CardTitle className="text-lg">{offer.merchant_name}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-3xl font-bold mb-4">{offer.price.toLocaleString('nb-NO')} kr</p>
+                      <Button className="w-full" asChild disabled={!offer.url}>
+                        <a href={cleanUrl} target="_blank" rel="noopener noreferrer">
+                          Se tilbud
+                          <ExternalLink className="ml-2 h-4 w-4" />
+                        </a>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </section>
         )}
