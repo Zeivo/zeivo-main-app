@@ -96,6 +96,47 @@ async function scrapePrice(url: string, merchantName: string, productName: strin
   }
 }
 
+async function fetchProductImage(productName: string): Promise<string | null> {
+  const unsplashAccessKey = Deno.env.get("UNSPLASH_ACCESS_KEY");
+  
+  if (!unsplashAccessKey) {
+    console.log("Unsplash access key not configured, skipping image fetch");
+    return null;
+  }
+
+  try {
+    console.log(`Fetching image from Unsplash for: ${productName}...`);
+    
+    const response = await fetch(
+      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(productName)}&per_page=1&orientation=squarish`,
+      {
+        headers: {
+          "Authorization": `Client-ID ${unsplashAccessKey}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error("Unsplash API error:", await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    
+    if (data.results && data.results.length > 0) {
+      const imageUrl = data.results[0].urls.regular;
+      console.log(`Found image from Unsplash: ${imageUrl}`);
+      return imageUrl;
+    }
+
+    console.log("No images found on Unsplash");
+    return null;
+  } catch (error) {
+    console.error("Error fetching image from Unsplash:", error);
+    return null;
+  }
+}
+
 async function scrapeFinnNo(productName: string): Promise<{ low: number; high: number } | null> {
   const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY");
   const searchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(productName)}`;
@@ -234,6 +275,15 @@ serve(async (req: Request) => {
             new_price_low: newPriceLow,
             new_price_high: newPriceHigh,
           })
+          .eq("id", product.id);
+      }
+
+      // Fetch product image from Unsplash
+      const imageUrl = await fetchProductImage(product.name);
+      if (imageUrl) {
+        await supabase
+          .from("products")
+          .update({ image: imageUrl })
           .eq("id", product.id);
       }
 
