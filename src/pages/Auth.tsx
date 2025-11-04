@@ -9,6 +9,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { z } from 'zod';
+
+// Define validation schemas
+const emailSchema = z.string().trim().email('Ugyldig e-postadresse').max(255, 'E-postadressen må være under 255 tegn');
+const passwordSchema = z.string().min(8, 'Passordet må være minst 8 tegn').max(72, 'Passordet må være under 72 tegn');
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -28,15 +33,34 @@ const Auth = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || (!isForgotPassword && !password)) {
-      toast.error('Vennligst fyll ut alle felt');
+    // Trim whitespace from email
+    const trimmedEmail = email.trim();
+    
+    // Validate email
+    const emailValidation = emailSchema.safeParse(trimmedEmail);
+    if (!emailValidation.success) {
+      toast.error(emailValidation.error.errors[0].message);
       return;
+    }
+    
+    // Validate password (except for forgot password flow)
+    if (!isForgotPassword) {
+      if (!password) {
+        toast.error('Vennligst fyll ut alle felt');
+        return;
+      }
+      
+      const passwordValidation = passwordSchema.safeParse(password);
+      if (!passwordValidation.success) {
+        toast.error(passwordValidation.error.errors[0].message);
+        return;
+      }
     }
 
     setIsSubmitting(true);
     try {
       if (isForgotPassword) {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
           redirectTo: `${window.location.origin}/auth`,
         });
         
@@ -45,10 +69,10 @@ const Auth = () => {
         toast.success('Passordtilbakestillings-e-post sendt! Sjekk innboksen din.');
         setIsForgotPassword(false);
       } else if (isSignUp) {
-        await signUp(email, password);
+        await signUp(trimmedEmail, password);
         toast.success('Sjekk e-posten din for å bekrefte kontoen');
       } else {
-        await signIn(email, password);
+        await signIn(trimmedEmail, password);
       }
     } catch (error: any) {
       toast.error(error.message || `Feil ved ${isForgotPassword ? 'tilbakestilling' : isSignUp ? 'registrering' : 'innlogging'}`);
@@ -165,6 +189,7 @@ const Auth = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isSubmitting}
+                maxLength={255}
                 required
               />
             </div>
@@ -178,8 +203,15 @@ const Auth = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isSubmitting}
+                  minLength={8}
+                  maxLength={72}
                   required
                 />
+                {isSignUp && password && (
+                  <p className="text-xs text-muted-foreground">
+                    Passordet må være minst 8 tegn langt
+                  </p>
+                )}
               </div>
             )}
             <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
