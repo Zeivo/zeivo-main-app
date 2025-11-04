@@ -101,6 +101,7 @@ export const useVariantListings = (variantId: string | undefined) => {
         .from("merchant_listings")
         .select("*")
         .eq("variant_id", variantId)
+        .eq("is_valid", true) // Only fetch valid listings
         .order("price");
 
       if (error) throw error;

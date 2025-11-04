@@ -77,6 +77,7 @@ export type Database = {
           confidence: number | null
           created_at: string
           id: string
+          is_valid: boolean | null
           merchant_name: string
           price: number
           scraped_at: string
@@ -89,6 +90,7 @@ export type Database = {
           confidence?: number | null
           created_at?: string
           id?: string
+          is_valid?: boolean | null
           merchant_name: string
           price: number
           scraped_at?: string
@@ -101,6 +103,7 @@ export type Database = {
           confidence?: number | null
           created_at?: string
           id?: string
+          is_valid?: boolean | null
           merchant_name?: string
           price?: number
           scraped_at?: string
