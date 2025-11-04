@@ -286,7 +286,7 @@ serve(async (req: Request) => {
         const prices = listings.map(l => l.price);
         const avgPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
         
-        console.log(`Processing variant: ${variantKey}, avg price: ${avgPrice}`);
+        console.log(`Processing variant: ${variantKey}, ${listings.length} listings, avg price: ${avgPrice}`);
 
         // Check if variant exists
         const { data: existingVariant } = await supabase
@@ -312,7 +312,7 @@ serve(async (req: Request) => {
             .single();
           
           variantId = updated!.id;
-          console.log(`Updated variant ${variantId}`);
+          console.log(`Updated variant ${variantId} with ${listings.length} listings`);
         } else {
           // Create new variant
           const { data: created } = await supabase
@@ -328,7 +328,7 @@ serve(async (req: Request) => {
             .single();
           
           variantId = created!.id;
-          console.log(`Created new variant ${variantId}`);
+          console.log(`Created new variant ${variantId} with ${listings.length} listings`);
         }
 
         // Delete old merchant listings for this variant
@@ -338,7 +338,7 @@ serve(async (req: Request) => {
           .eq('variant_id', variantId)
           .eq('condition', 'new');
 
-        // Insert new merchant listings
+        // Insert ALL merchant listings (not just one per merchant)
         const listingsToInsert = listings.map(listing => ({
           variant_id: variantId,
           merchant_name: listing.merchant_name,
@@ -349,25 +349,32 @@ serve(async (req: Request) => {
         }));
 
         if (listingsToInsert.length > 0) {
-          await supabase
+          const { error: insertError } = await supabase
             .from('merchant_listings')
             .insert(listingsToInsert);
           
-          console.log(`Inserted ${listingsToInsert.length} merchant listings`);
+          if (insertError) {
+            console.error(`Error inserting listings:`, insertError);
+          } else {
+            console.log(`✓ Inserted ${listingsToInsert.length} merchant listings for variant ${variantId}`);
+          }
         }
 
-        // Create AI job for better disambiguation
-        await supabase
-          .from('ai_jobs')
-          .insert({
-            kind: 'disambiguate_variant',
-            payload: {
-              variant_id: variantId,
-              product_name: product.name,
-              listings: listingsToInsert,
-            },
-            status: 'pending',
-          });
+        // Create AI job for extracting product image if variant doesn't have one
+        if (!existingVariant || !existingVariant.image_url) {
+          await supabase
+            .from('ai_jobs')
+            .insert({
+              kind: 'extract_product_image',
+              payload: {
+                variant_id: variantId,
+                product_name: product.name,
+                product_image: product.image,
+                variant_info: firstListing.variant_info,
+              },
+              status: 'pending',
+            });
+        }
       }
 
       // Scrape used prices from Finn.no

@@ -99,6 +99,15 @@ async function writeAlertEmail(payload: any): Promise<any> {
   return await callGemini(prompt, systemPrompt);
 }
 
+async function extractProductImage(payload: any): Promise<any> {
+  // For now, use the main product image
+  // In the future, we could search for variant-specific images
+  return {
+    image_url: payload.product_image,
+    confidence: 0.9
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -181,6 +190,13 @@ serve(async (req) => {
             break;
           case 'write_alert_email':
             result = await writeAlertEmail(job.payload);
+            break;
+          case 'disambiguate_variant':
+            // For now, just mark as completed - the variant is already created
+            result = { status: 'completed', variant_id: job.payload.variant_id };
+            break;
+          case 'extract_product_image':
+            result = await extractProductImage(job.payload);
             break;
           default:
             throw new Error(`Unknown job kind: ${job.kind}`);
@@ -279,5 +295,14 @@ async function storeResult(supabase: any, job: AIJob, result: any) {
     await supabase
       .from('product_attributes')
       .insert(attributeInserts);
+  } else if (job.kind === 'extract_product_image' && result.image_url) {
+    // Update variant with image
+    await supabase
+      .from('product_variants')
+      .update({
+        image_url: result.image_url,
+        confidence: result.confidence
+      })
+      .eq('id', job.payload.variant_id);
   }
 }
