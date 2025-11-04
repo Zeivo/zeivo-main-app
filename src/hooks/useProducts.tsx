@@ -99,13 +99,33 @@ export const useVariantListings = (variantId: string | undefined) => {
 
       const { data, error } = await supabase
         .from("merchant_listings")
-        .select("*")
+        .select(`
+          *,
+          product_variants!inner(
+            product_id,
+            products!inner(
+              category
+            )
+          )
+        `)
         .eq("variant_id", variantId)
-        .eq("is_valid", true) // Only fetch valid listings
         .order("price");
 
       if (error) throw error;
-      return data as MerchantListing[];
+      
+      // Filter out invalid prices on the client side
+      const filtered = (data as any[]).filter((listing) => {
+        const category = listing.product_variants?.products?.category;
+        
+        // For smartphones, prices must be between 3000-30000 kr
+        if (category === 'smartphone') {
+          return listing.price >= 3000 && listing.price <= 30000;
+        }
+        
+        return true;
+      });
+      
+      return filtered as MerchantListing[];
     },
     enabled: !!variantId,
   });

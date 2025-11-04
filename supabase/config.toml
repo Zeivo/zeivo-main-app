@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.test-vertex-ai]
 verify_jwt = true
+
+[functions.fix-invalid-prices]
+verify_jwt = true
