@@ -64,7 +64,7 @@ serve(async (req) => {
 
     const projectId = 'zeivo-477017';
     const location = 'europe-west4';
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-1.5-flash';
     const testPrompt = 'Extract product information from this text: iPhone 15 128GB Blue';
     const systemPrompt = 'Extract product attributes. Return JSON: { "storage": "...", "color": "..." }';
 
