@@ -62,25 +62,31 @@ serve(async (req) => {
 
     console.log('Testing Vertex AI with API key:', VERTEX_AI_API_KEY.substring(0, 10) + '...');
 
+    const projectId = 'zeivo-477017';
+    const location = 'europe-west4';
+    const model = 'gemini-2.0-flash-exp';
     const testPrompt = 'Extract product information from this text: iPhone 15 128GB Blue';
     const systemPrompt = 'Extract product attributes. Return JSON: { "storage": "...", "color": "..." }';
 
+    const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
     const response = await fetch(
-      'https://api.vertexai.google.com/v1/chat/completions',
+      endpoint,
       {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${VERTEX_AI_API_KEY}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-goog-api-key': VERTEX_AI_API_KEY
         },
         body: JSON.stringify({
-          model: 'gemini-2.0-flash-exp',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: testPrompt }
-          ],
-          temperature: 0,
-          response_format: { type: "json_object" }
+          contents: [{
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\n${testPrompt}` }]
+          }],
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: 'application/json'
+          }
         })
       }
     );
@@ -104,7 +110,7 @@ serve(async (req) => {
     }
 
     const data = JSON.parse(responseText);
-    const aiResponse = data.choices?.[0]?.message?.content;
+    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     return new Response(
       JSON.stringify({ 
