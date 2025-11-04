@@ -383,20 +383,15 @@ serve(async (req: Request) => {
       if (finnData.listings.length > 0) {
         console.log(`Finn.no found ${finnData.listings.length} used listings`);
         
-        // Create finn.no listings for each variant
-        for (const [variantKey, variantListings] of variantGroups.entries()) {
-          const firstListing = variantListings[0];
-          
-          // Get variant ID
-          const { data: variant } = await supabase
-            .from('product_variants')
-            .select('id')
-            .eq('product_id', product.id)
-            .eq('storage_gb', firstListing.variant_info.storage_gb || null)
-            .eq('color', firstListing.variant_info.color || null)
-            .maybeSingle();
-          
-          if (variant) {
+        // Get all variants for this product
+        const { data: allVariants } = await supabase
+          .from('product_variants')
+          .select('id')
+          .eq('product_id', product.id);
+        
+        if (allVariants && allVariants.length > 0) {
+          // Create finn.no listings for each variant
+          for (const variant of allVariants) {
             // Delete old finn.no listings for this variant
             await supabase
               .from('merchant_listings')
