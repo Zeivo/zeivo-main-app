@@ -1,1 +1,7 @@
 project_id = "yfutdebllhsawqzihysx"
+
+[functions.ai-worker]
+verify_jwt = false
+
+[functions.test-vertex-ai]
+verify_jwt = true

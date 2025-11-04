@@ -4,12 +4,42 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, Store, Tag, ArrowLeft, Shield } from "lucide-react";
+import { Package, Store, Tag, ArrowLeft, Shield, Brain } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 const Admin = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { isAdmin, loading } = useAdmin();
+  const { toast } = useToast();
+  const [processingJobs, setProcessingJobs] = useState(false);
+
+  const handleProcessJobs = async () => {
+    setProcessingJobs(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-worker', {
+        body: {}
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "AI Jobs Processed",
+        description: `Processed ${data.processed} of ${data.total} jobs`,
+      });
+    } catch (error) {
+      console.error('Error processing jobs:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to process jobs",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingJobs(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -73,10 +103,11 @@ const Admin = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <Tabs defaultValue="products" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
             <TabsTrigger value="products">Produkter</TabsTrigger>
             <TabsTrigger value="merchants">Butikker</TabsTrigger>
             <TabsTrigger value="listings">Tilbud</TabsTrigger>
+            <TabsTrigger value="ai">AI Jobs</TabsTrigger>
           </TabsList>
 
           <TabsContent value="products" className="space-y-4">
@@ -147,6 +178,53 @@ const Admin = () => {
                 >
                   Åpne SQL Editor
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="ai" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  AI Job Processing
+                </CardTitle>
+                <CardDescription>
+                  Process pending AI jobs for price normalization and attribute extraction
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-muted-foreground">
+                  Click the button below to manually trigger the AI worker to process all pending jobs.
+                  This will use Vertex AI to normalize offers and extract product attributes.
+                </p>
+                <Button 
+                  onClick={handleProcessJobs}
+                  disabled={processingJobs}
+                  className="w-full sm:w-auto"
+                >
+                  {processingJobs ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    'Process AI Jobs'
+                  )}
+                </Button>
+                <div className="mt-4 p-4 bg-muted rounded-lg">
+                  <p className="text-sm">
+                    <strong>Current Status:</strong> 12 pending extract_product_image jobs
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => window.open('https://supabase.com/dashboard/project/yfutdebllhsawqzihysx/functions/ai-worker/logs', '_blank')}
+                  >
+                    View AI Worker Logs
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
