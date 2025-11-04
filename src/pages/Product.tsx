@@ -3,8 +3,6 @@ import { useProduct, useProductVariants, useVariantListings } from "@/hooks/useP
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 
 const Product = () => {
@@ -97,45 +95,38 @@ const VariantCard = ({ variant }: { variant: any }) => {
           {variant.model && ` • ${variant.model}`}
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="new" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="new">
-              Ny ({newListings.length})
-            </TabsTrigger>
-            <TabsTrigger value="used">
-              Brukt ({usedListings.length})
-            </TabsTrigger>
-          </TabsList>
+      <CardContent className="space-y-6">
+        {newListings.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+              Nye produkter ({newListings.length})
+            </h3>
+            <div className="space-y-3">
+              {newListings.map((listing) => (
+                <ListingCard key={listing.id} listing={listing} />
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {usedListings.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+              Brukte produkter ({usedListings.length})
+            </h3>
+            <div className="space-y-3">
+              {usedListings.map((listing) => (
+                <ListingCard key={listing.id} listing={listing} />
+              ))}
+            </div>
+          </div>
+        )}
 
-          <TabsContent value="new" className="space-y-4 mt-4">
-            {newListings.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                Ingen nye tilbud tilgjengelig
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {newListings.map((listing) => (
-                  <ListingCard key={listing.id} listing={listing} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="used" className="space-y-4 mt-4">
-            {usedListings.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                Ingen brukte tilbud tilgjengelig
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {usedListings.map((listing) => (
-                  <ListingCard key={listing.id} listing={listing} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+        {newListings.length === 0 && usedListings.length === 0 && (
+          <p className="text-center text-muted-foreground py-8">
+            Ingen tilbud tilgjengelig for denne varianten
+          </p>
+        )}
       </CardContent>
     </Card>
   );
