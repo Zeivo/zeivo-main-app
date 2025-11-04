@@ -109,13 +109,6 @@ const VariantCard = ({ variant }: { variant: any }) => {
           </TabsList>
 
           <TabsContent value="new" className="space-y-4 mt-4">
-            {variant.price_new && (
-              <div className="text-center mb-4">
-                <p className="text-sm text-muted-foreground">Gjennomsnittspris</p>
-                <p className="text-3xl font-bold text-primary">{variant.price_new.toLocaleString('no-NO')} kr</p>
-              </div>
-            )}
-            <Separator />
             {newListings.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
                 Ingen nye tilbud tilgjengelig
@@ -130,13 +123,6 @@ const VariantCard = ({ variant }: { variant: any }) => {
           </TabsContent>
 
           <TabsContent value="used" className="space-y-4 mt-4">
-            {variant.price_used && (
-              <div className="text-center mb-4">
-                <p className="text-sm text-muted-foreground">Gjennomsnittspris</p>
-                <p className="text-3xl font-bold text-primary">{variant.price_used.toLocaleString('no-NO')} kr</p>
-              </div>
-            )}
-            <Separator />
             {usedListings.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
                 Ingen brukte tilbud tilgjengelig

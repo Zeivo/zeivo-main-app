@@ -380,16 +380,66 @@ serve(async (req: Request) => {
       // Scrape used prices from Finn.no
       const finnData = await scrapeFinnNo(product.name);
       
-      if (finnData.low && finnData.high) {
-        console.log(`Finn.no used prices: ${finnData.low} - ${finnData.high} kr`);
+      if (finnData.listings.length > 0) {
+        console.log(`Finn.no found ${finnData.listings.length} used listings`);
         
-        // Update all variants with used price range
-        await supabase
-          .from('product_variants')
-          .update({
-            price_used: Math.round((finnData.low + finnData.high) / 2),
-          })
-          .eq('product_id', product.id);
+        // Create finn.no listings for each variant
+        for (const [variantKey, variantListings] of variantGroups.entries()) {
+          const firstListing = variantListings[0];
+          
+          // Get variant ID
+          const { data: variant } = await supabase
+            .from('product_variants')
+            .select('id')
+            .eq('product_id', product.id)
+            .eq('storage_gb', firstListing.variant_info.storage_gb || null)
+            .eq('color', firstListing.variant_info.color || null)
+            .maybeSingle();
+          
+          if (variant) {
+            // Delete old finn.no listings for this variant
+            await supabase
+              .from('merchant_listings')
+              .delete()
+              .eq('variant_id', variant.id)
+              .eq('condition', 'used')
+              .eq('merchant_name', 'Finn.no');
+            
+            // Insert finn.no listings (limit to top 10 by price)
+            const finnListingsToInsert = finnData.listings
+              .slice(0, 10)
+              .map(listing => ({
+                variant_id: variant.id,
+                merchant_name: 'Finn.no',
+                url: `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(product.name)}`,
+                price: listing.price,
+                condition: 'used' as const,
+                confidence: 0.7,
+              }));
+            
+            if (finnListingsToInsert.length > 0) {
+              const { error: insertError } = await supabase
+                .from('merchant_listings')
+                .insert(finnListingsToInsert);
+              
+              if (insertError) {
+                console.error(`Error inserting Finn.no listings:`, insertError);
+              } else {
+                console.log(`✓ Inserted ${finnListingsToInsert.length} Finn.no listings for variant ${variant.id}`);
+              }
+            }
+            
+            // Update variant with average used price
+            if (finnData.low && finnData.high) {
+              await supabase
+                .from('product_variants')
+                .update({
+                  price_used: Math.round((finnData.low + finnData.high) / 2),
+                })
+                .eq('id', variant.id);
+            }
+          }
+        }
       }
 
       results.push({
