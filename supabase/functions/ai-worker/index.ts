@@ -27,6 +27,9 @@ interface ExtractAttributesPayload {
 }
 
 const VERTEX_AI_API_KEY = Deno.env.get('VERTEX_AI_API_KEY');
+const PROJECT_ID = 'zeivo-477017';
+const LOCATION = 'europe-west4';
+const MODEL = 'gemini-2.5-flash';
 const MAX_RETRIES = 3;
 
 async function callVertexAI(prompt: string, systemPrompt: string): Promise<any> {
@@ -34,39 +37,43 @@ async function callVertexAI(prompt: string, systemPrompt: string): Promise<any> 
     throw new Error('VERTEX_AI_API_KEY not configured');
   }
 
-  const response = await fetch(
-    'https://api.vertexai.google.com/v1/chat/completions',
-    {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${VERTEX_AI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gemini-2.0-flash-exp',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt }
-        ],
+  const endpoint = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
+
+  console.log('Calling Vertex AI:', { endpoint, promptLength: prompt.length });
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'x-goog-api-key': VERTEX_AI_API_KEY
+    },
+    body: JSON.stringify({
+      contents: [{
+        role: 'user',
+        parts: [{ text: `${systemPrompt}\n\n${prompt}` }]
+      }],
+      generationConfig: {
         temperature: 0,
-        response_format: { type: "json_object" }
-      })
-    }
-  );
+        responseMimeType: 'application/json'
+      }
+    })
+  });
 
   if (!response.ok) {
     const error = await response.text();
-    console.error('Vertex AI API error:', error);
+    console.error('Vertex AI API error:', response.status, error);
     throw new Error(`Vertex AI API error: ${response.status}`);
   }
 
   const data = await response.json();
-  const text = data.choices?.[0]?.message?.content;
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   
   if (!text) {
+    console.error('No response from Vertex AI:', JSON.stringify(data));
     throw new Error('No response from Vertex AI');
   }
 
+  console.log('Vertex AI response received:', text.substring(0, 100));
   return JSON.parse(text);
 }
 
