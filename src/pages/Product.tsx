@@ -96,11 +96,6 @@ const VariantCard = ({ variant }: { variant: any }) => {
           {variant.color && ` • ${variant.color}`}
           {variant.model && ` • ${variant.model}`}
         </CardTitle>
-        {variant.confidence > 0 && (
-          <Badge variant="outline" className="w-fit">
-            Confidence: {(variant.confidence * 100).toFixed(0)}%
-          </Badge>
-        )}
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="new" className="w-full">
@@ -178,11 +173,6 @@ const ListingCard = ({ listing }: { listing: any }) => {
             )}
             <div>
               <p className="font-semibold">{listing.merchant_name}</p>
-              {listing.confidence > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Confidence: {(listing.confidence * 100).toFixed(0)}%
-                </p>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-4">
