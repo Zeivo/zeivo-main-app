@@ -26,45 +26,45 @@ interface ExtractAttributesPayload {
   text: string;
 }
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+const VERTEX_AI_API_KEY = Deno.env.get('VERTEX_AI_API_KEY');
 const MAX_RETRIES = 3;
 
-async function callGemini(prompt: string, systemPrompt: string): Promise<any> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured');
+async function callVertexAI(prompt: string, systemPrompt: string): Promise<any> {
+  if (!VERTEX_AI_API_KEY) {
+    throw new Error('VERTEX_AI_API_KEY not configured');
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    'https://api.vertexai.google.com/v1/chat/completions',
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Authorization': `Bearer ${VERTEX_AI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: systemPrompt },
-            { text: prompt }
-          ]
-        }],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: "application/json"
-        }
+        model: 'gemini-2.0-flash-exp',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0,
+        response_format: { type: "json_object" }
       })
     }
   );
 
   if (!response.ok) {
     const error = await response.text();
-    console.error('Gemini API error:', error);
-    throw new Error(`Gemini API error: ${response.status}`);
+    console.error('Vertex AI API error:', error);
+    throw new Error(`Vertex AI API error: ${response.status}`);
   }
 
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = data.choices?.[0]?.message?.content;
   
   if (!text) {
-    throw new Error('No response from Gemini');
+    throw new Error('No response from Vertex AI');
   }
 
   return JSON.parse(text);
@@ -80,7 +80,7 @@ async function normalizeOffer(payload: NormalizeOfferPayload): Promise<any> {
     candidates: payload.candidates
   });
 
-  return await callGemini(prompt, systemPrompt);
+  return await callVertexAI(prompt, systemPrompt);
 }
 
 async function extractAttributes(payload: ExtractAttributesPayload): Promise<any> {
@@ -88,7 +88,7 @@ async function extractAttributes(payload: ExtractAttributesPayload): Promise<any
   
   const prompt = `Product text: ${payload.text}`;
 
-  return await callGemini(prompt, systemPrompt);
+  return await callVertexAI(prompt, systemPrompt);
 }
 
 async function writeAlertEmail(payload: any): Promise<any> {
@@ -96,7 +96,7 @@ async function writeAlertEmail(payload: any): Promise<any> {
   
   const prompt = JSON.stringify(payload);
 
-  return await callGemini(prompt, systemPrompt);
+  return await callVertexAI(prompt, systemPrompt);
 }
 
 async function extractProductImage(payload: any): Promise<any> {
