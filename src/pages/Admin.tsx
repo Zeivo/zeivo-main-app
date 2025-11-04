@@ -60,6 +60,9 @@ const Admin = () => {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">{user.email}</span>
+            <Button variant="outline" size="sm" onClick={() => navigate("/test-vertex-ai")}>
+              Test Vertex AI
+            </Button>
             <Button variant="outline" onClick={signOut}>
               Logg ut
             </Button>
