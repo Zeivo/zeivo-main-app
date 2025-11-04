@@ -15,5 +15,5 @@ verify_jwt = false
 [functions.check-price-alerts]
 verify_jwt = false
 
-[functions.generate-product-images]
+[functions.search-product-images]
 verify_jwt = false
