@@ -179,22 +179,86 @@ async function scrapeProductListings(
   return listings;
 }
 
-async function scrapeFinnNo(productName: string): Promise<{
-  listings: Array<{ price: number; title: string }>;
-  low?: number;
-  high?: number;
-}> {
-  const searchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(productName)}`;
+async function validatePricesWithVertexAI(
+  productName: string,
+  prices: number[],
+  condition: string
+): Promise<number[]> {
+  const vertexApiKey = Deno.env.get('VERTEX_AI_API_KEY');
+  if (!vertexApiKey || prices.length === 0) {
+    return prices;
+  }
+
+  try {
+    const prompt = `Given the product "${productName}" with condition "${condition}", determine which of these prices are realistic and likely from the correct product (not accessories or different models): ${prices.join(', ')} kr. Return only the valid prices as a JSON array of numbers.`;
+    
+    const response = await fetch(
+      'https://europe-west4-aiplatform.googleapis.com/v1/projects/zeivo-477017/locations/europe-west4/publishers/google/models/gemini-2.5-flash:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${vertexApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 1024,
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      console.error('Vertex AI validation failed:', response.status);
+      return prices;
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const jsonMatch = text.match(/\[[\d,\s]+\]/);
+    
+    if (jsonMatch) {
+      const validPrices = JSON.parse(jsonMatch[0]);
+      console.log(`Validated ${validPrices.length}/${prices.length} prices for ${productName}`);
+      return validPrices;
+    }
+  } catch (error) {
+    console.error('Error validating prices with Vertex AI:', error);
+  }
   
-  console.log(`Scraping Finn.no for used: ${productName}`);
+  return prices;
+}
+
+async function scrapeFinnNo(
+  productName: string,
+  condition: 1 | 2 | 3,
+  brand?: string
+): Promise<number | null> {
+  // condition 1 = "helt ny" (brand new)
+  // condition 2 = "som ny" (like new)  
+  // condition 3 = "pent brukt" (well used)
+  
+  const conditionNames = { 1: 'helt ny', 2: 'som ny', 3: 'pent brukt' };
+  let searchUrl = `https://www.finn.no/recommerce/forsale/search?q=${encodeURIComponent(productName)}&condition=${condition}&shipping_types=0&sort=PRICE_DESC`;
+  
+  if (brand) {
+    searchUrl += `&brand=${brand}`;
+  }
+  
+  console.log(`Scraping Finn.no for ${conditionNames[condition]}: ${productName}`);
   const scrapedData = await scrapeWithFirecrawl(searchUrl);
   
   if (!scrapedData || !scrapedData.data) {
-    return { listings: [] };
+    return null;
   }
 
   const content = scrapedData.data.markdown || '';
-  const listings: Array<{ price: number; title: string }> = [];
+  const prices: number[] = [];
   
   // Extract prices from Finn.no
   const priceMatches = content.matchAll(/(\d{1,3}(?:[\s.]?\d{3})+)\s*kr/gi);
@@ -202,26 +266,27 @@ async function scrapeFinnNo(productName: string): Promise<{
     const priceStr = match[1].replace(/[^\d]/g, '');
     const price = parseInt(priceStr);
     
-    if (price > 1000 && price < 100000) { // Sanity check for used prices
-      listings.push({ price, title: productName });
+    if (price > 1000 && price < 100000) {
+      prices.push(price);
     }
   }
 
-  if (listings.length > 0) {
-    const prices = listings.map(l => l.price).sort((a, b) => a - b);
-    // Filter outliers using IQR method
-    const q1Index = Math.floor(prices.length * 0.25);
-    const q3Index = Math.floor(prices.length * 0.75);
-    const filteredPrices = prices.slice(q1Index, q3Index + 1);
-    
-    return {
-      listings,
-      low: Math.min(...filteredPrices),
-      high: Math.max(...filteredPrices),
-    };
+  if (prices.length === 0) {
+    return null;
   }
 
-  return { listings: [] };
+  // Validate prices with Vertex AI
+  const validPrices = await validatePricesWithVertexAI(productName, prices, conditionNames[condition]);
+  
+  if (validPrices.length === 0) {
+    return null;
+  }
+
+  // Calculate average of valid prices
+  const average = Math.round(validPrices.reduce((a, b) => a + b, 0) / validPrices.length);
+  console.log(`Found ${validPrices.length} valid prices for ${conditionNames[condition]}, average: ${average} kr`);
+  
+  return average;
 }
 
 serve(async (req: Request) => {
@@ -377,11 +442,29 @@ serve(async (req: Request) => {
         }
       }
 
-      // Scrape used prices from Finn.no
-      const finnData = await scrapeFinnNo(product.name);
+      // Scrape used prices from Finn.no for 3 conditions
+      const conditions = [
+        { id: 1 as const, name: 'Helt ny', dbCondition: 'new' },
+        { id: 2 as const, name: 'Som ny', dbCondition: 'used' },
+        { id: 3 as const, name: 'Pent brukt', dbCondition: 'used' }
+      ];
       
-      if (finnData.listings.length > 0) {
-        console.log(`Finn.no found ${finnData.listings.length} used listings`);
+      const finnPrices: Array<{ condition: string; price: number; dbCondition: string }> = [];
+      
+      for (const cond of conditions) {
+        const avgPrice = await scrapeFinnNo(product.name, cond.id, product.brand);
+        if (avgPrice) {
+          finnPrices.push({ 
+            condition: cond.name, 
+            price: avgPrice,
+            dbCondition: cond.dbCondition
+          });
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limiting
+      }
+      
+      if (finnPrices.length > 0) {
+        console.log(`Finn.no found ${finnPrices.length} condition averages`);
         
         // Get all variants for this product
         const { data: allVariants } = await supabase
@@ -397,20 +480,17 @@ serve(async (req: Request) => {
               .from('merchant_listings')
               .delete()
               .eq('variant_id', variant.id)
-              .eq('condition', 'used')
               .eq('merchant_name', 'Finn.no');
             
-            // Insert finn.no listings (limit to top 10 by price)
-            const finnListingsToInsert = finnData.listings
-              .slice(0, 10)
-              .map(listing => ({
-                variant_id: variant.id,
-                merchant_name: 'Finn.no',
-                url: `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(product.name)}`,
-                price: listing.price,
-                condition: 'used' as const,
-                confidence: 0.7,
-              }));
+            // Insert one listing per condition
+            const finnListingsToInsert = finnPrices.map(fp => ({
+              variant_id: variant.id,
+              merchant_name: `Finn.no (${fp.condition})`,
+              url: `https://www.finn.no/recommerce/forsale/search?q=${encodeURIComponent(product.name)}&shipping_types=0`,
+              price: fp.price,
+              condition: fp.dbCondition as 'new' | 'used',
+              confidence: 0.8,
+            }));
             
             if (finnListingsToInsert.length > 0) {
               const { error: insertError } = await supabase
@@ -420,18 +500,8 @@ serve(async (req: Request) => {
               if (insertError) {
                 console.error(`Error inserting Finn.no listings:`, insertError);
               } else {
-                console.log(`✓ Inserted ${finnListingsToInsert.length} Finn.no listings for variant ${variant.id}`);
+                console.log(`✓ Inserted ${finnListingsToInsert.length} Finn.no condition averages for variant ${variant.id}`);
               }
-            }
-            
-            // Update variant with average used price
-            if (finnData.low && finnData.high) {
-              await supabase
-                .from('product_variants')
-                .update({
-                  price_used: Math.round((finnData.low + finnData.high) / 2),
-                })
-                .eq('id', variant.id);
             }
           }
         }
@@ -441,7 +511,7 @@ serve(async (req: Request) => {
         product: product.name,
         variants: variantGroups.size,
         new_listings: allNewListings.length,
-        used_range: finnData.low && finnData.high ? [finnData.low, finnData.high] : null,
+        finn_conditions: finnPrices.length,
       });
 
       // Rate limiting between products
