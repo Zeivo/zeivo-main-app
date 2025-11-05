@@ -275,8 +275,11 @@ async function scrapeFinnNo(
     return null;
   }
 
+  // Take top 3 prices for validation
+  const topPrices = prices.slice(0, 3);
+
   // Validate prices with Vertex AI
-  const validPrices = await validatePricesWithVertexAI(productName, prices, conditionNames[condition]);
+  const validPrices = await validatePricesWithVertexAI(productName, topPrices, conditionNames[condition]);
   
   if (validPrices.length === 0) {
     return null;
@@ -480,7 +483,7 @@ serve(async (req: Request) => {
               .from('merchant_listings')
               .delete()
               .eq('variant_id', variant.id)
-              .eq('merchant_name', 'Finn.no');
+              .like('merchant_name', 'Finn.no%');
             
             // Insert one listing per condition
             const finnListingsToInsert = finnPrices.map(fp => ({
