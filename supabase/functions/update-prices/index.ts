@@ -34,6 +34,40 @@ const STORE_SEARCH_URLS: Record<string, (productName: string) => string> = {
   'NetOnNet': (name) => `https://www.netonnet.no/search?q=${encodeURIComponent(name)}`,
 };
 
+async function scrapeWithScrapeGraphAI(url: string): Promise<any> {
+  const scrapeGraphApiKey = Deno.env.get('SCRAPEGRAPHAI_API_KEY');
+  if (!scrapeGraphApiKey) {
+    console.error('SCRAPEGRAPHAI_API_KEY not configured');
+    return null;
+  }
+
+  try {
+    console.log(`Scraping with ScrapeGraphAI: ${url}`);
+    const response = await fetch('https://api.scrapegraphai.com/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${scrapeGraphApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url,
+        format: 'markdown',
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`ScrapeGraphAI error: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return { data: { markdown: data.content || data.markdown || '' } };
+  } catch (error) {
+    console.error('ScrapeGraphAI scraping error:', error);
+    return null;
+  }
+}
+
 async function scrapeWithFirecrawl(url: string): Promise<any> {
   const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
   if (!firecrawlApiKey) {
@@ -67,6 +101,19 @@ async function scrapeWithFirecrawl(url: string): Promise<any> {
     console.error('Firecrawl scraping error:', error);
     return null;
   }
+}
+
+async function scrapeWithFallback(url: string): Promise<any> {
+  // Try Firecrawl first
+  let data = await scrapeWithFirecrawl(url);
+  
+  // If Firecrawl fails, try ScrapeGraphAI
+  if (!data) {
+    console.log('Firecrawl failed, trying ScrapeGraphAI...');
+    data = await scrapeWithScrapeGraphAI(url);
+  }
+  
+  return data;
 }
 
 function extractVariantFromText(text: string, productName: string): {
@@ -136,7 +183,7 @@ async function scrapeProductListings(
 ): Promise<ScrapedListing[]> {
   console.log(`Scraping ${merchantName} for ${productName}`);
   
-  const scrapedData = await scrapeWithFirecrawl(searchUrl);
+  const scrapedData = await scrapeWithFallback(searchUrl);
   if (!scrapedData || !scrapedData.data) {
     console.log(`No data from ${merchantName}`);
     return [];
@@ -251,7 +298,7 @@ async function scrapeFinnNo(
   }
   
   console.log(`Scraping Finn.no for ${conditionNames[condition]}: ${productName}`);
-  const scrapedData = await scrapeWithFirecrawl(searchUrl);
+  const scrapedData = await scrapeWithFallback(searchUrl);
   
   if (!scrapedData || !scrapedData.data) {
     return null;
