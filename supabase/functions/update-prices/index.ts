@@ -29,6 +29,102 @@ interface NormalizedPrice {
   reason?: string;
 }
 
+interface ScrapedListing {
+  merchant_name: string;
+  price: number;
+  condition: string;
+  url: string;
+  title: string;
+}
+
+async function scrapeWithFirecrawl(url: string): Promise<{ markdown: string } | null> {
+  const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
+  if (!firecrawlApiKey) {
+    console.error('FIRECRAWL_API_KEY not configured');
+    return null;
+  }
+
+  try {
+    console.log(`Scraping ${url} with Firecrawl...`);
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Firecrawl error for ${url}:`, response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    return { markdown: data.data?.markdown || '' };
+  } catch (error) {
+    console.error(`Error scraping ${url} with Firecrawl:`, error);
+    return null;
+  }
+}
+
+async function scrapeFinnNo(productName: string, category: string): Promise<ScrapedListing[]> {
+  const searchQuery = encodeURIComponent(productName);
+  const finnUrl = `https://www.finn.no/bap/forsale/search.html?q=${searchQuery}`;
+  
+  console.log(`Scraping Finn.no for: ${productName}`);
+  const result = await scrapeWithFirecrawl(finnUrl);
+  
+  if (!result?.markdown) {
+    console.log('No markdown content from Finn.no');
+    return [];
+  }
+
+  const listings: ScrapedListing[] = [];
+  const lines = result.markdown.split('\n');
+  
+  let currentListing: Partial<ScrapedListing> = {};
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Look for price patterns (e.g., "5 990 kr", "5990 kr", "kr 5990")
+    const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
+    if (priceMatch) {
+      const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
+      const price = parseInt(priceStr, 10);
+      
+      if (price > 100 && price < 1000000) {
+        currentListing.price = price;
+        currentListing.merchant_name = 'Finn.no';
+        currentListing.condition = 'used'; // Finn.no is primarily used items
+        currentListing.url = finnUrl;
+        
+        // Look for title in nearby lines
+        for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
+          const nearbyLine = lines[j].trim();
+          if (nearbyLine.length > 10 && nearbyLine.length < 200 && !nearbyLine.match(/kr/i)) {
+            currentListing.title = nearbyLine;
+            break;
+          }
+        }
+        
+        if (currentListing.title) {
+          listings.push(currentListing as ScrapedListing);
+          currentListing = {};
+        }
+      }
+    }
+  }
+  
+  console.log(`Found ${listings.length} listings on Finn.no`);
+  return listings;
+}
+
 async function normalizePricesWithVertexAI(
   productName: string,
   category: string,
@@ -117,7 +213,7 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    console.log('Starting AI-powered price normalization...');
+    console.log('Starting price scraping and normalization...');
 
     // Fetch all products
     const { data: products, error: productsError } = await supabase
@@ -131,9 +227,14 @@ serve(async (req: Request) => {
     console.log(`Found ${products?.length || 0} products to process`);
 
     const results = [];
+    let totalScraped = 0;
 
     for (const product of products || []) {
       console.log(`\n=== Processing: ${product.name} ===`);
+
+      // First, scrape Finn.no for fresh listings
+      const scrapedListings = await scrapeFinnNo(product.name, product.category);
+      totalScraped += scrapedListings.length;
 
       // Get all variants for this product
       const { data: variants, error: variantsError } = await supabase
@@ -148,11 +249,45 @@ serve(async (req: Request) => {
 
       console.log(`Found ${variants.length} variants`);
 
+      // Store scraped listings (use first variant for simplicity, or implement better matching)
+      if (scrapedListings.length > 0 && variants.length > 0) {
+        const variantId = variants[0].id;
+        
+        // Clear old Finn.no listings for this variant
+        await supabase
+          .from('merchant_listings')
+          .delete()
+          .eq('variant_id', variantId)
+          .eq('merchant_name', 'Finn.no');
+
+        // Insert new scraped listings
+        const listingsToInsert = scrapedListings.map(listing => ({
+          variant_id: variantId,
+          merchant_name: listing.merchant_name,
+          price: listing.price,
+          condition: listing.condition,
+          url: listing.url,
+          is_valid: true,
+        }));
+
+        if (listingsToInsert.length > 0) {
+          const { error: insertError } = await supabase
+            .from('merchant_listings')
+            .insert(listingsToInsert);
+
+          if (insertError) {
+            console.error('Error inserting scraped listings:', insertError);
+          } else {
+            console.log(`✓ Inserted ${listingsToInsert.length} new listings from Finn.no`);
+          }
+        }
+      }
+
       // Process each variant
       for (const variant of variants) {
         console.log(`\nProcessing variant: ${variant.storage_gb || 'unknown'} GB, ${variant.color || 'unknown'}`);
 
-        // Get all merchant listings for this variant
+        // Get all merchant listings for this variant (including newly scraped ones)
         const { data: listings, error: listingsError } = await supabase
           .from('merchant_listings')
           .select('id, variant_id, merchant_name, price, condition, url')
@@ -235,7 +370,8 @@ serve(async (req: Request) => {
       }
     }
 
-    console.log('\n=== Price normalization completed ===');
+    console.log('\n=== Price update completed ===');
+    console.log(`Scraped ${totalScraped} new listings`);
     console.log(`Processed ${results.length} variants across ${products?.length || 0} products`);
 
     return new Response(
@@ -245,6 +381,7 @@ serve(async (req: Request) => {
         summary: {
           products_processed: products?.length || 0,
           variants_updated: results.length,
+          listings_scraped: totalScraped,
         }
       }),
       { 
