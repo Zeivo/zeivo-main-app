@@ -1,14 +1,12 @@
 import { useParams, Link } from "react-router-dom";
-import { useProduct, useProductVariants, useVariantListings } from "@/hooks/useProducts";
+import { useProduct, useProductVariants } from "@/hooks/useProducts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { PriceRangeDisplay } from "@/components/products/PriceRangeDisplay";
-import { MarketInsights } from "@/components/products/MarketInsights";
-import { PriceTierBadge } from "@/components/products/PriceTierBadge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 
 const Product = () => {
   const { slug } = useParams();
@@ -74,27 +72,35 @@ const Product = () => {
               <div className="space-y-4">
                 <h2 className="text-2xl font-semibold">Tilgjengelige varianter</h2>
                 {variants.map((variant) => (
-                  <VariantCard key={variant.id} variant={variant} />
+                  <VariantCard key={variant.id} variant={variant} productName={product.name} />
                 ))}
               </div>
             )}
           </div>
         </div>
+
+        {/* Market Insights at bottom */}
+        <Alert className="max-w-4xl mx-auto">
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            Sammenlign alltid priser på tvers av forskjellige selgere og sjekk nøye beskrivelsen av varens tilstand. 
+            Vurder om en "god" eller "akseptabel" tilstand er tilstrekkelig for ditt behov for å spare penger. 
+            Vær også oppmerksom på lagringsplass og farge, da dette kan påvirke prisen.
+          </AlertDescription>
+        </Alert>
       </div>
     </div>
   );
 };
 
-const VariantCard = ({ variant }: { variant: any }) => {
-  const { data: listings = [] } = useVariantListings(variant.id);
-
-  const newListings = listings.filter(l => l.condition === 'new');
-  const usedListings = listings.filter(l => l.condition === 'used');
-  
+const VariantCard = ({ variant, productName }: { variant: any; productName: string }) => {
   const priceData = variant.price_data;
   const newPriceData = priceData?.new;
   const usedPriceData = priceData?.used;
-  const marketInsights = priceData?.market_insights;
+
+  const finnSearchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(
+    `${productName} ${variant.storage_gb ? variant.storage_gb + 'GB' : ''} ${variant.color || ''}`
+  )}`;
 
   return (
     <Card>
@@ -106,7 +112,6 @@ const VariantCard = ({ variant }: { variant: any }) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Price Overview Cards */}
         <div className="grid md:grid-cols-2 gap-4">
           {newPriceData && (
             <PriceRangeDisplay
@@ -119,109 +124,27 @@ const VariantCard = ({ variant }: { variant: any }) => {
             />
           )}
           {usedPriceData && (
-            <PriceRangeDisplay
-              priceRange={usedPriceData.price_range}
-              qualityTiers={usedPriceData.tiers}
-              condition="used"
-            />
+            <div className="space-y-3">
+              <PriceRangeDisplay
+                priceRange={usedPriceData.price_range}
+                qualityTiers={usedPriceData.tiers}
+                condition="used"
+              />
+              <Button asChild variant="outline" className="w-full">
+                <a href={finnSearchUrl} target="_blank" rel="noopener noreferrer">
+                  Se tilbud på Finn.no
+                  <ExternalLink className="ml-2 h-4 w-4" />
+                </a>
+              </Button>
+            </div>
           )}
         </div>
 
-        {/* Market Insights */}
-        {marketInsights && (
-          <MarketInsights insights={marketInsights} />
-        )}
-
-        {/* Detailed Listings */}
-        {newListings.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger asChild>
-              <Button variant="outline" className="w-full">
-                <span className="flex-1 text-left">
-                  Vis {newListings.length} nye tilbud
-                </span>
-                <ChevronDown className="h-4 w-4 transition-transform" />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 mt-3">
-              {newListings.map((listing) => (
-                <ListingCard key={listing.id} listing={listing} />
-              ))}
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-        
-        {usedListings.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger asChild>
-              <Button variant="outline" className="w-full">
-                <span className="flex-1 text-left">
-                  Vis {usedListings.length} brukte tilbud
-                </span>
-                <ChevronDown className="h-4 w-4 transition-transform" />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 mt-3">
-              {usedListings.map((listing) => (
-                <ListingCard key={listing.id} listing={listing} />
-              ))}
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-
-        {newListings.length === 0 && usedListings.length === 0 && (
+        {!newPriceData && !usedPriceData && (
           <p className="text-center text-muted-foreground py-8">
             Ingen tilbud tilgjengelig for denne varianten
           </p>
         )}
-      </CardContent>
-    </Card>
-  );
-};
-
-const ListingCard = ({ listing }: { listing: any }) => {
-  return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            {listing.url && (
-              <img 
-                src={`https://www.google.com/s2/favicons?domain=${new URL(listing.url).hostname}&sz=64`}
-                alt={`${listing.merchant_name} favicon`}
-                className="h-6 w-6"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            )}
-            <div className="flex-1">
-              <p className="font-semibold">{listing.merchant_name}</p>
-              {listing.price_tier && (
-                <div className="mt-1">
-                  <PriceTierBadge tier={listing.price_tier} />
-                </div>
-              )}
-              {listing.confidence && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Konfidensgrad: {Math.round(listing.confidence * 100)}%
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="text-xl font-bold whitespace-nowrap">
-              {listing.price.toLocaleString('no-NO')} kr
-            </p>
-            {listing.url && (
-              <Button asChild variant="outline" size="sm">
-                <a href={listing.url} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                </a>
-              </Button>
-            )}
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
