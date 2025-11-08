@@ -71,9 +71,11 @@ const Product = () => {
             ) : (
               <div className="space-y-4">
                 <h2 className="text-2xl font-semibold">Tilgjengelige varianter</h2>
-                {variants.map((variant) => (
-                  <VariantCard key={variant.id} variant={variant} productName={product.name} />
-                ))}
+                {variants
+                  .filter(variant => variant.storage_gb != null || variant.model != null)
+                  .map((variant) => (
+                    <VariantCard key={variant.id} variant={variant} productName={product.name} />
+                  ))}
               </div>
             )}
           </div>
