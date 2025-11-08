@@ -78,8 +78,14 @@ export type Database = {
           created_at: string
           id: string
           is_valid: boolean | null
+          listing_count: number | null
+          listing_group_id: string | null
+          market_insight: string | null
           merchant_name: string
           price: number
+          price_max: number | null
+          price_min: number | null
+          price_tier: string | null
           scraped_at: string
           updated_at: string
           url: string | null
@@ -91,8 +97,14 @@ export type Database = {
           created_at?: string
           id?: string
           is_valid?: boolean | null
+          listing_count?: number | null
+          listing_group_id?: string | null
+          market_insight?: string | null
           merchant_name: string
           price: number
+          price_max?: number | null
+          price_min?: number | null
+          price_tier?: string | null
           scraped_at?: string
           updated_at?: string
           url?: string | null
@@ -104,8 +116,14 @@ export type Database = {
           created_at?: string
           id?: string
           is_valid?: boolean | null
+          listing_count?: number | null
+          listing_group_id?: string | null
+          market_insight?: string | null
           merchant_name?: string
           price?: number
+          price_max?: number | null
+          price_min?: number | null
+          price_tier?: string | null
           scraped_at?: string
           updated_at?: string
           url?: string | null
@@ -186,6 +204,7 @@ export type Database = {
           image_url: string | null
           model: string | null
           mpn: string | null
+          price_data: Json | null
           price_new: number | null
           price_used: number | null
           product_id: string
@@ -203,6 +222,7 @@ export type Database = {
           image_url?: string | null
           model?: string | null
           mpn?: string | null
+          price_data?: Json | null
           price_new?: number | null
           price_used?: number | null
           product_id: string
@@ -220,6 +240,7 @@ export type Database = {
           image_url?: string | null
           model?: string | null
           mpn?: string | null
+          price_data?: Json | null
           price_new?: number | null
           price_used?: number | null
           product_id?: string

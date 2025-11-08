@@ -125,39 +125,85 @@ async function scrapeFinnNo(productName: string, category: string): Promise<Scra
   return listings;
 }
 
-async function normalizePricesWithVertexAI(
+interface VariantSpec {
+  id: string;
+  storage_gb: number | null;
+  color: string | null;
+  model: string | null;
+}
+
+interface BatchNormalizationResult {
+  matched_listings: {
+    variant_id: string;
+    listings: {
+      finn_listing_index: number;
+      confidence: number;
+      condition_quality: string;
+      price: number;
+      url: string;
+      title: string;
+    }[];
+    price_range: { min: number; max: number; median: number };
+    quality_tiers: {
+      [key: string]: { min: number; max: number; count: number };
+    };
+  }[];
+  unmatched_listings: number[];
+  market_insights: {
+    summary: string;
+    price_trend: string;
+    best_value_tier: string;
+    recommendation: string;
+  };
+}
+
+async function batchNormalizeFinnListings(
   productName: string,
   category: string,
-  listings: MerchantListing[]
-): Promise<NormalizedPrice[]> {
+  variants: VariantSpec[],
+  listings: ScrapedListing[]
+): Promise<BatchNormalizationResult | null> {
   const vertexApiKey = Deno.env.get('VERTEX_AI_API_KEY');
   if (!vertexApiKey || listings.length === 0) {
-    console.log('No Vertex AI key or no listings, returning raw prices');
-    return listings.map(l => ({ price: l.price, confidence: 0.5 }));
+    console.log('No Vertex AI key or no listings');
+    return null;
   }
 
   try {
-    const listingsSummary = listings.map((l, i) => 
-      `${i + 1}. ${l.merchant_name}: ${l.price} kr (condition: ${l.condition})`
-    ).join('\n');
+    const prompt = `You are a product matching AI for a Norwegian price comparison platform.
 
-    const prompt = `You are analyzing price data for: "${productName}" (Category: ${category})
+Product: ${productName}
+Category: ${category}
 
-Here are the scraped listings:
-${listingsSummary}
+Available Variants:
+${JSON.stringify(variants, null, 2)}
 
-Task: Identify which prices are valid for the actual product (not accessories, cases, or wrong products). 
-- Filter out obvious outliers and mismatches
-- Consider that used items should be cheaper than new
-- Return ONLY valid prices with confidence scores
+Finn.no Listings:
+${JSON.stringify(listings.map((l, i) => ({ index: i, title: l.title, price: l.price, url: l.url })), null, 2)}
 
-Return JSON array format:
-[
-  {"price": 5990, "confidence": 0.9, "reason": "Valid new price from retailer"},
-  {"price": 4500, "confidence": 0.8, "reason": "Valid used price"}
-]`;
+Tasks:
+1. Match each listing to a variant (or mark as unmatched)
+2. Assess listing quality based on title
+3. Group listings by variant
+4. Calculate price ranges and tiers per variant
+5. Generate market insights in Norwegian
 
-    console.log(`Calling Vertex AI for ${productName} with ${listings.length} listings`);
+Quality Assessment Guidelines:
+- "excellent": Words like "ny", "ubrukt", "perfekt", "som ny"
+- "good": Words like "lite brukt", "god stand", "fungerer perfekt"
+- "acceptable": Words like "brukt", "normal slitasje"
+- "poor": Words like "defekt", "ødelagt"
+
+Matching Rules:
+- Match storage GB (128, 256, 512, 1024)
+- Match color (Norwegian and English names)
+- Confidence >0.9: Exact match on storage + color
+- Confidence 0.7-0.9: Match on storage OR color
+- Confidence <0.7: Mark as unmatched
+
+Return the analysis with matched listings grouped by variant, price tiers, and market insights.`;
+
+    console.log(`Batch normalizing ${listings.length} Finn.no listings for ${productName}`);
     
     const response = await fetch(
       'https://europe-west4-aiplatform.googleapis.com/v1/projects/zeivo-477017/locations/europe-west4/publishers/google/models/gemini-2.5-flash:generateContent',
@@ -172,10 +218,81 @@ Return JSON array format:
             role: 'user',
             parts: [{ text: prompt }]
           }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2048,
-            responseMimeType: 'application/json'
+          tools: [{
+            function_declarations: [{
+              name: 'return_normalized_listings',
+              description: 'Return normalized and matched listings with price tiers and insights',
+              parameters: {
+                type: 'object',
+                properties: {
+                  matched_listings: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        variant_id: { type: 'string' },
+                        listings: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              finn_listing_index: { type: 'number' },
+                              confidence: { type: 'number' },
+                              condition_quality: { type: 'string' },
+                              price: { type: 'number' },
+                              url: { type: 'string' },
+                              title: { type: 'string' }
+                            },
+                            required: ['finn_listing_index', 'confidence', 'condition_quality', 'price', 'url', 'title']
+                          }
+                        },
+                        price_range: {
+                          type: 'object',
+                          properties: {
+                            min: { type: 'number' },
+                            max: { type: 'number' },
+                            median: { type: 'number' }
+                          }
+                        },
+                        quality_tiers: {
+                          type: 'object',
+                          additionalProperties: {
+                            type: 'object',
+                            properties: {
+                              min: { type: 'number' },
+                              max: { type: 'number' },
+                              count: { type: 'number' }
+                            }
+                          }
+                        }
+                      },
+                      required: ['variant_id', 'listings', 'price_range', 'quality_tiers']
+                    }
+                  },
+                  unmatched_listings: {
+                    type: 'array',
+                    items: { type: 'number' }
+                  },
+                  market_insights: {
+                    type: 'object',
+                    properties: {
+                      summary: { type: 'string' },
+                      price_trend: { type: 'string' },
+                      best_value_tier: { type: 'string' },
+                      recommendation: { type: 'string' }
+                    },
+                    required: ['summary', 'price_trend', 'best_value_tier', 'recommendation']
+                  }
+                },
+                required: ['matched_listings', 'unmatched_listings', 'market_insights']
+              }
+            }]
+          }],
+          tool_config: {
+            function_calling_config: {
+              mode: 'ANY',
+              allowed_function_names: ['return_normalized_listings']
+            }
           }
         })
       }
@@ -184,22 +301,22 @@ Return JSON array format:
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Vertex AI error:', response.status, errorText);
-      return listings.map(l => ({ price: l.price, confidence: 0.5 }));
+      return null;
     }
 
     const data = await response.json();
-    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const functionCall = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
     
-    if (aiResponse) {
-      const normalized = JSON.parse(aiResponse);
-      console.log(`✓ Vertex AI normalized ${normalized.length}/${listings.length} prices for ${productName}`);
-      return normalized;
+    if (functionCall?.name === 'return_normalized_listings') {
+      const result = functionCall.args as BatchNormalizationResult;
+      console.log(`✓ Batch normalized ${listings.length} listings into ${result.matched_listings.length} variants`);
+      return result;
     }
   } catch (error) {
-    console.error('Error normalizing with Vertex AI:', error);
+    console.error('Error in batch normalization:', error);
   }
   
-  return listings.map(l => ({ price: l.price, confidence: 0.5 }));
+  return null;
 }
 
 serve(async (req: Request) => {
@@ -249,122 +366,111 @@ serve(async (req: Request) => {
 
       console.log(`Found ${variants.length} variants`);
 
-      // Store scraped listings (use first variant for simplicity, or implement better matching)
+      // Batch normalize all scraped listings with AI
       if (scrapedListings.length > 0 && variants.length > 0) {
-        const variantId = variants[0].id;
-        
-        // Clear old Finn.no listings for this variant
-        await supabase
-          .from('merchant_listings')
-          .delete()
-          .eq('variant_id', variantId)
-          .eq('merchant_name', 'Finn.no');
+        const batchResult = await batchNormalizeFinnListings(
+          product.name,
+          product.category,
+          variants.map(v => ({
+            id: v.id,
+            storage_gb: v.storage_gb,
+            color: v.color,
+            model: v.model
+          })),
+          scrapedListings
+        );
 
-        // Insert new scraped listings
-        const listingsToInsert = scrapedListings.map(listing => ({
-          variant_id: variantId,
-          merchant_name: listing.merchant_name,
-          price: listing.price,
-          condition: listing.condition,
-          url: listing.url,
-          is_valid: true,
-        }));
+        if (batchResult) {
+          const listingGroupId = crypto.randomUUID();
+          
+          // Process matched listings by variant
+          for (const variantMatch of batchResult.matched_listings) {
+            // Clear old Finn.no listings for this variant
+            await supabase
+              .from('merchant_listings')
+              .delete()
+              .eq('variant_id', variantMatch.variant_id)
+              .eq('merchant_name', 'Finn.no');
 
-        if (listingsToInsert.length > 0) {
-          const { error: insertError } = await supabase
-            .from('merchant_listings')
-            .insert(listingsToInsert);
+            // Insert matched listings with quality tiers
+            const listingsToInsert = variantMatch.listings.map(listing => ({
+              variant_id: variantMatch.variant_id,
+              merchant_name: 'Finn.no',
+              price: listing.price,
+              condition: 'used',
+              url: listing.url,
+              is_valid: true,
+              confidence: listing.confidence,
+              price_tier: listing.condition_quality,
+              listing_group_id: listingGroupId,
+              market_insight: batchResult.market_insights.recommendation,
+            }));
 
-          if (insertError) {
-            console.error('Error inserting scraped listings:', insertError);
-          } else {
-            console.log(`✓ Inserted ${listingsToInsert.length} new listings from Finn.no`);
+            if (listingsToInsert.length > 0) {
+              const { error: insertError } = await supabase
+                .from('merchant_listings')
+                .insert(listingsToInsert);
+
+              if (insertError) {
+                console.error('Error inserting normalized listings:', insertError);
+              } else {
+                console.log(`✓ Inserted ${listingsToInsert.length} normalized listings for variant ${variantMatch.variant_id}`);
+              }
+            }
+
+            // Update variant with rich price_data
+            const priceData = {
+              used: {
+                source: 'Finn.no',
+                tiers: variantMatch.quality_tiers,
+                total_listings: variantMatch.listings.length,
+                median_price: variantMatch.price_range.median,
+                price_range: variantMatch.price_range,
+                recommendation: batchResult.market_insights.recommendation,
+                updated_at: new Date().toISOString()
+              },
+              market_insights: batchResult.market_insights
+            };
+
+            const { error: updateError } = await supabase
+              .from('product_variants')
+              .update({
+                price_used: variantMatch.price_range.median,
+                confidence: variantMatch.listings.reduce((sum, l) => sum + l.confidence, 0) / variantMatch.listings.length,
+                price_data: priceData,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', variantMatch.variant_id);
+
+            if (updateError) {
+              console.error(`Error updating variant price_data:`, updateError);
+            } else {
+              console.log(`✓ Updated variant ${variantMatch.variant_id} with rich price data`);
+            }
           }
+
+          console.log(`✓ Batch processed ${scrapedListings.length} listings → ${batchResult.matched_listings.length} variants`);
         }
       }
 
-      // Process each variant
+      // Results are now stored in the batch processing above
+      // Track summary for response
       for (const variant of variants) {
-        console.log(`\nProcessing variant: ${variant.storage_gb || 'unknown'} GB, ${variant.color || 'unknown'}`);
-
-        // Get all merchant listings for this variant (including newly scraped ones)
-        const { data: listings, error: listingsError } = await supabase
-          .from('merchant_listings')
-          .select('id, variant_id, merchant_name, price, condition, url')
-          .eq('variant_id', variant.id)
-          .eq('is_valid', true);
-
-        if (listingsError || !listings || listings.length === 0) {
-          console.log(`No listings found for variant ${variant.id}`);
-          continue;
-        }
-
-        console.log(`Found ${listings.length} listings for this variant`);
-
-        // Normalize prices with Vertex AI
-        const normalizedPrices = await normalizePricesWithVertexAI(
-          product.name,
-          product.category,
-          listings
-        );
-
-        if (normalizedPrices.length === 0) {
-          console.log('No valid prices after normalization');
-          continue;
-        }
-
-        // Separate by condition
-        const newPrices = normalizedPrices.filter((_, i) => 
-          listings[i].condition === 'new'
-        );
-        const usedPrices = normalizedPrices.filter((_, i) => 
-          listings[i].condition === 'used'
-        );
-
-        // Calculate averages
-        let avgNewPrice = null;
-        let avgUsedPrice = null;
-
-        if (newPrices.length > 0) {
-          avgNewPrice = Math.round(
-            newPrices.reduce((sum, p) => sum + p.price, 0) / newPrices.length
-          );
-          console.log(`✓ Calculated avg new price: ${avgNewPrice} kr (from ${newPrices.length} listings)`);
-        }
-
-        if (usedPrices.length > 0) {
-          avgUsedPrice = Math.round(
-            usedPrices.reduce((sum, p) => sum + p.price, 0) / usedPrices.length
-          );
-          console.log(`✓ Calculated avg used price: ${avgUsedPrice} kr (from ${usedPrices.length} listings)`);
-        }
-
-        // Calculate overall confidence
-        const avgConfidence = normalizedPrices.reduce((sum, p) => sum + p.confidence, 0) / normalizedPrices.length;
-
-        // Update variant with normalized prices
-        const { error: updateError } = await supabase
+        const { data: priceData } = await supabase
           .from('product_variants')
-          .update({
-            price_new: avgNewPrice,
-            price_used: avgUsedPrice,
-            confidence: avgConfidence,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', variant.id);
+          .select('price_used, confidence, price_data')
+          .eq('id', variant.id)
+          .single();
 
-        if (updateError) {
-          console.error(`Error updating variant ${variant.id}:`, updateError);
-        } else {
-          console.log(`✓ Updated variant ${variant.id} with AI-normalized prices`);
+        if (priceData) {
           results.push({
             product: product.name,
             variant: `${variant.storage_gb}GB ${variant.color}`,
-            price_new: avgNewPrice,
-            price_used: avgUsedPrice,
-            confidence: avgConfidence,
-            listings_analyzed: listings.length,
-            valid_prices: normalizedPrices.length,
+            price_new: null,
+            price_used: priceData.price_used,
+            confidence: priceData.confidence,
+            listings_analyzed: priceData.price_data?.used?.total_listings || 0,
+            valid_prices: priceData.price_data?.used?.total_listings || 0,
           });
         }
       }
