@@ -41,7 +41,7 @@ export const PriceRangeDisplay = ({
       </div>
 
       {qualityTiers && Object.keys(qualityTiers).length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2 pt-3 border-t">
           <p className="text-xs font-medium text-muted-foreground">Kvalitetsnivåer:</p>
           <div className="flex flex-wrap gap-2">
             {Object.entries(qualityTiers).map(([tier, data]) => (

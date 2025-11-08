@@ -113,21 +113,21 @@ const VariantCard = ({ variant, productName }: { variant: any; productName: stri
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid md:grid-cols-2 gap-4">
-          {newPriceData && (
+          {newPriceData && variant.price_new && (
             <PriceRangeDisplay
               priceRange={{
-                min: variant.price_new || 0,
-                max: variant.price_new || 0,
-                median: variant.price_new || 0
+                min: variant.price_new,
+                max: variant.price_new,
+                median: variant.price_new
               }}
               condition="new"
             />
           )}
-          {usedPriceData && (
+          {usedPriceData && variant.price_used && (
             <div className="space-y-3">
               <PriceRangeDisplay
                 priceRange={usedPriceData.price_range}
-                qualityTiers={usedPriceData.tiers}
+                qualityTiers={Object.keys(usedPriceData.tiers || {}).length > 0 ? usedPriceData.tiers : undefined}
                 condition="used"
               />
               <Button asChild variant="outline" className="w-full">
