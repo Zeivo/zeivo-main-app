@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.search-product-images]
 verify_jwt = false
+
+[functions.budget-manager]
+verify_jwt = true

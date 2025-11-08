@@ -319,6 +319,97 @@ Return the analysis with matched listings grouped by variant, price tiers, and m
   return null;
 }
 
+async function scrapeRetailerWithFirecrawl(url: string, retailerName: string): Promise<ScrapedListing[]> {
+  const result = await scrapeWithFirecrawl(url);
+  
+  if (!result?.markdown) {
+    console.log(`No markdown content from ${retailerName}`);
+    return [];
+  }
+
+  const listings: ScrapedListing[] = [];
+  const lines = result.markdown.split('\n');
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Look for Norwegian price patterns (e.g., "5 990 kr", "kr 5990")
+    const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
+    if (priceMatch) {
+      const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
+      const price = parseInt(priceStr, 10);
+      
+      if (price > 100 && price < 1000000) {
+        let title = '';
+        // Look for title in nearby lines
+        for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
+          const nearbyLine = lines[j].trim();
+          if (nearbyLine.length > 10 && nearbyLine.length < 200 && !nearbyLine.match(/kr/i)) {
+            title = nearbyLine;
+            break;
+          }
+        }
+        
+        if (title) {
+          listings.push({
+            merchant_name: retailerName,
+            price,
+            condition: 'new',
+            url,
+            title
+          });
+        }
+      }
+    }
+  }
+  
+  console.log(`Found ${listings.length} listings on ${retailerName}`);
+  return listings;
+}
+
+async function getBudgetForToday(supabase: any): Promise<{ remaining: number; total: number }> {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const { data: budget } = await supabase
+    .from('scrape_budget')
+    .select('*')
+    .eq('date', today)
+    .single();
+    
+  if (!budget) {
+    // Create today's budget
+    await supabase.from('scrape_budget').insert({
+      date: today,
+      budget_total: 100,
+      budget_used: 0,
+      budget_remaining: 100
+    });
+    return { remaining: 100, total: 100 };
+  }
+  
+  return { remaining: budget.budget_remaining, total: budget.budget_total };
+}
+
+async function updateBudgetUsage(supabase: any, used: number) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const { data: budget } = await supabase
+    .from('scrape_budget')
+    .select('*')
+    .eq('date', today)
+    .single();
+    
+  if (budget) {
+    await supabase
+      .from('scrape_budget')
+      .update({
+        budget_used: budget.budget_used + used,
+        budget_remaining: budget.budget_remaining - used
+      })
+      .eq('date', today);
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -330,12 +421,28 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    console.log('Starting price scraping and normalization...');
+    console.log('Starting intelligent price scraping...');
 
-    // Fetch all products
+    // Check budget
+    const budget = await getBudgetForToday(supabase);
+    console.log(`Daily budget: ${budget.remaining}/${budget.total} requests remaining`);
+    
+    if (budget.remaining <= 0) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: 'Daily scraping budget exhausted',
+          budget
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Fetch products ordered by priority
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('*');
+      .select('*')
+      .order('priority_score', { ascending: false });
 
     if (productsError) {
       throw productsError;
@@ -345,13 +452,57 @@ serve(async (req: Request) => {
 
     const results = [];
     let totalScraped = 0;
+    let requestsUsed = 0;
+    const maxRequests = Math.min(budget.remaining, 50); // Cap per run
 
     for (const product of products || []) {
-      console.log(`\n=== Processing: ${product.name} ===`);
+      if (requestsUsed >= maxRequests) {
+        console.log(`Reached request limit (${maxRequests}), stopping`);
+        break;
+      }
 
-      // First, scrape Finn.no for fresh listings
+      console.log(`\n=== Processing: ${product.name} (Priority: ${product.priority_score}) ===`);
+
+      // Check if product needs scraping based on frequency
+      const hoursSinceLastScrape = product.last_scraped_at 
+        ? (Date.now() - new Date(product.last_scraped_at).getTime()) / (1000 * 60 * 60)
+        : Infinity;
+        
+      if (hoursSinceLastScrape < (product.scrape_frequency_hours || 24)) {
+        console.log(`Skipping - scraped ${Math.floor(hoursSinceLastScrape)}h ago`);
+        continue;
+      }
+
+      // Scrape Finn.no for used listings
       const scrapedListings = await scrapeFinnNo(product.name, product.category);
       totalScraped += scrapedListings.length;
+      requestsUsed++;
+
+      // Get merchant URLs for this product
+      const { data: merchantUrls } = await supabase
+        .from('merchant_urls')
+        .select('*')
+        .eq('product_id', product.id)
+        .eq('is_active', true);
+
+      // Scrape retailers for new products (budget permitting)
+      const retailerListings: ScrapedListing[] = [];
+      if (merchantUrls && requestsUsed < maxRequests) {
+        for (const merchantUrl of merchantUrls.slice(0, maxRequests - requestsUsed)) {
+          const listings = await scrapeRetailerWithFirecrawl(
+            merchantUrl.url, 
+            merchantUrl.merchant_name
+          );
+          retailerListings.push(...listings);
+          requestsUsed++;
+          
+          // Update last_scraped_at for this URL
+          await supabase
+            .from('merchant_urls')
+            .update({ last_scraped_at: new Date().toISOString() })
+            .eq('id', merchantUrl.id);
+        }
+      }
 
       // Get all variants for this product
       const { data: variants, error: variantsError } = await supabase
@@ -366,8 +517,9 @@ serve(async (req: Request) => {
 
       console.log(`Found ${variants.length} variants`);
 
-      // Batch normalize all scraped listings with AI
-      if (scrapedListings.length > 0 && variants.length > 0) {
+      // Batch normalize with AI
+      const allListings = [...scrapedListings, ...retailerListings];
+      if (allListings.length > 0 && variants.length > 0) {
         const batchResult = await batchNormalizeFinnListings(
           product.name,
           product.category,
@@ -377,27 +529,25 @@ serve(async (req: Request) => {
             color: v.color,
             model: v.model
           })),
-          scrapedListings
+          allListings
         );
 
         if (batchResult) {
           const listingGroupId = crypto.randomUUID();
           
-          // Process matched listings by variant
           for (const variantMatch of batchResult.matched_listings) {
-            // Clear old Finn.no listings for this variant
+            // Clear old listings for this variant
             await supabase
               .from('merchant_listings')
               .delete()
-              .eq('variant_id', variantMatch.variant_id)
-              .eq('merchant_name', 'Finn.no');
+              .eq('variant_id', variantMatch.variant_id);
 
             // Insert matched listings with quality tiers
             const listingsToInsert = variantMatch.listings.map(listing => ({
               variant_id: variantMatch.variant_id,
-              merchant_name: 'Finn.no',
+              merchant_name: allListings[listing.finn_listing_index].merchant_name,
               price: listing.price,
-              condition: 'used',
+              condition: allListings[listing.finn_listing_index].condition,
               url: listing.url,
               is_valid: true,
               confidence: listing.confidence,
@@ -414,28 +564,48 @@ serve(async (req: Request) => {
               if (insertError) {
                 console.error('Error inserting normalized listings:', insertError);
               } else {
-                console.log(`✓ Inserted ${listingsToInsert.length} normalized listings for variant ${variantMatch.variant_id}`);
+                console.log(`✓ Inserted ${listingsToInsert.length} listings for variant ${variantMatch.variant_id}`);
               }
             }
 
+            // Calculate prices by condition
+            const newListings = listingsToInsert.filter(l => l.condition === 'new');
+            const usedListings = listingsToInsert.filter(l => l.condition === 'used');
+            
+            const price_new = newListings.length > 0
+              ? Math.round(newListings.reduce((sum, l) => sum + l.price, 0) / newListings.length)
+              : null;
+              
+            const price_used = usedListings.length > 0
+              ? variantMatch.price_range.median
+              : null;
+
             // Update variant with rich price_data
             const priceData = {
-              used: {
+              new: newListings.length > 0 ? {
+                source: 'retailers',
+                avg_price: price_new,
+                total_listings: newListings.length,
+                merchants: [...new Set(newListings.map(l => l.merchant_name))],
+                updated_at: new Date().toISOString()
+              } : null,
+              used: usedListings.length > 0 ? {
                 source: 'Finn.no',
                 tiers: variantMatch.quality_tiers,
-                total_listings: variantMatch.listings.length,
+                total_listings: usedListings.length,
                 median_price: variantMatch.price_range.median,
                 price_range: variantMatch.price_range,
                 recommendation: batchResult.market_insights.recommendation,
                 updated_at: new Date().toISOString()
-              },
+              } : null,
               market_insights: batchResult.market_insights
             };
 
             const { error: updateError } = await supabase
               .from('product_variants')
               .update({
-                price_used: variantMatch.price_range.median,
+                price_new,
+                price_used,
                 confidence: variantMatch.listings.reduce((sum, l) => sum + l.confidence, 0) / variantMatch.listings.length,
                 price_data: priceData,
                 updated_at: new Date().toISOString(),
@@ -443,41 +613,38 @@ serve(async (req: Request) => {
               .eq('id', variantMatch.variant_id);
 
             if (updateError) {
-              console.error(`Error updating variant price_data:`, updateError);
+              console.error(`Error updating variant:`, updateError);
             } else {
-              console.log(`✓ Updated variant ${variantMatch.variant_id} with rich price data`);
+              console.log(`✓ Updated variant ${variantMatch.variant_id} with price data`);
             }
+
+            results.push({
+              product: product.name,
+              variant: `${variantMatch.variant_id}`,
+              price_new,
+              price_used,
+              confidence: priceData.used?.total_listings || priceData.new?.total_listings || 0,
+              listings_analyzed: variantMatch.listings.length,
+            });
           }
 
-          console.log(`✓ Batch processed ${scrapedListings.length} listings → ${batchResult.matched_listings.length} variants`);
+          console.log(`✓ Processed ${allListings.length} listings → ${batchResult.matched_listings.length} variants`);
         }
       }
 
-      // Results are now stored in the batch processing above
-      // Track summary for response
-      for (const variant of variants) {
-        const { data: priceData } = await supabase
-          .from('product_variants')
-          .select('price_used, confidence, price_data')
-          .eq('id', variant.id)
-          .single();
-
-        if (priceData) {
-          results.push({
-            product: product.name,
-            variant: `${variant.storage_gb}GB ${variant.color}`,
-            price_new: null,
-            price_used: priceData.price_used,
-            confidence: priceData.confidence,
-            listings_analyzed: priceData.price_data?.used?.total_listings || 0,
-            valid_prices: priceData.price_data?.used?.total_listings || 0,
-          });
-        }
-      }
+      // Update product last_scraped_at
+      await supabase
+        .from('products')
+        .update({ last_scraped_at: new Date().toISOString() })
+        .eq('id', product.id);
     }
+
+    // Update budget usage
+    await updateBudgetUsage(supabase, requestsUsed);
 
     console.log('\n=== Price update completed ===');
     console.log(`Scraped ${totalScraped} new listings`);
+    console.log(`Used ${requestsUsed} requests`);
     console.log(`Processed ${results.length} variants across ${products?.length || 0} products`);
 
     return new Response(

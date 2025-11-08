@@ -139,6 +139,50 @@ export type Database = {
           },
         ]
       }
+      merchant_urls: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          last_scraped_at: string | null
+          merchant_name: string
+          product_id: string
+          updated_at: string
+          url: string
+          url_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_scraped_at?: string | null
+          merchant_name: string
+          product_id: string
+          updated_at?: string
+          url: string
+          url_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_scraped_at?: string | null
+          merchant_name?: string
+          product_id?: string
+          updated_at?: string
+          url?: string
+          url_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_urls_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merchants: {
         Row: {
           created_at: string
@@ -266,8 +310,11 @@ export type Database = {
           family: string | null
           id: string
           image: string | null
+          last_scraped_at: string | null
           model: string | null
           name: string
+          priority_score: number | null
+          scrape_frequency_hours: number | null
           slug: string
           updated_at: string
         }
@@ -278,8 +325,11 @@ export type Database = {
           family?: string | null
           id?: string
           image?: string | null
+          last_scraped_at?: string | null
           model?: string | null
           name: string
+          priority_score?: number | null
+          scrape_frequency_hours?: number | null
           slug: string
           updated_at?: string
         }
@@ -290,8 +340,11 @@ export type Database = {
           family?: string | null
           id?: string
           image?: string | null
+          last_scraped_at?: string | null
           model?: string | null
           name?: string
+          priority_score?: number | null
+          scrape_frequency_hours?: number | null
           slug?: string
           updated_at?: string
         }
@@ -313,6 +366,36 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scrape_budget: {
+        Row: {
+          budget_remaining: number
+          budget_total: number
+          budget_used: number
+          created_at: string
+          date: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          budget_remaining?: number
+          budget_total?: number
+          budget_used?: number
+          created_at?: string
+          date: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          budget_remaining?: number
+          budget_total?: number
+          budget_used?: number
+          created_at?: string
+          date?: string
           id?: string
           updated_at?: string
         }
