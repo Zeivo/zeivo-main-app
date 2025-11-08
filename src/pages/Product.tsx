@@ -97,10 +97,18 @@ const VariantCard = ({ variant, productName }: { variant: any; productName: stri
   const priceData = variant.price_data;
   const newPriceData = priceData?.new;
   const usedPriceData = priceData?.used;
+  
+  const hasNewPrice = variant.price_new && variant.price_new > 0;
+  const hasUsedPrice = usedPriceData?.price_range && variant.price_used && variant.price_used > 0;
 
   const finnSearchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(
     `${productName} ${variant.storage_gb ? variant.storage_gb + 'GB' : ''} ${variant.color || ''}`
   )}`;
+
+  // Don't render card if no price data at all
+  if (!hasNewPrice && !hasUsedPrice) {
+    return null;
+  }
 
   return (
     <Card>
@@ -113,7 +121,7 @@ const VariantCard = ({ variant, productName }: { variant: any; productName: stri
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid md:grid-cols-2 gap-4">
-          {newPriceData && variant.price_new && (
+          {hasNewPrice && (
             <PriceRangeDisplay
               priceRange={{
                 min: variant.price_new,
@@ -123,7 +131,7 @@ const VariantCard = ({ variant, productName }: { variant: any; productName: stri
               condition="new"
             />
           )}
-          {usedPriceData && variant.price_used && (
+          {hasUsedPrice && (
             <div className="space-y-3">
               <PriceRangeDisplay
                 priceRange={usedPriceData.price_range}
@@ -139,12 +147,6 @@ const VariantCard = ({ variant, productName }: { variant: any; productName: stri
             </div>
           )}
         </div>
-
-        {!newPriceData && !usedPriceData && (
-          <p className="text-center text-muted-foreground py-8">
-            Ingen tilbud tilgjengelig for denne varianten
-          </p>
-        )}
       </CardContent>
     </Card>
   );
