@@ -4,11 +4,14 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, Store, Tag, ArrowLeft, Shield, Brain, Activity } from "lucide-react";
+import { Package, Store, Tag, ArrowLeft, Shield, Brain, Activity, Image as ImageIcon, Link2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { ScrapingManager } from "@/components/admin/ScrapingManager";
+import { MerchantUrlManager } from "@/components/admin/MerchantUrlManager";
+import { ProductImageManager } from "@/components/admin/ProductImageManager";
+
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -103,14 +106,29 @@ const Admin = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="products" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 max-w-3xl">
+        <Tabs defaultValue="images" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-6 max-w-4xl">
+            <TabsTrigger value="images">
+              <ImageIcon className="h-4 w-4 mr-2" />
+              Bilder
+            </TabsTrigger>
+            <TabsTrigger value="urls">
+              <Link2 className="h-4 w-4 mr-2" />
+              URLs
+            </TabsTrigger>
             <TabsTrigger value="products">Produkter</TabsTrigger>
-            <TabsTrigger value="merchants">Butikker</TabsTrigger>
             <TabsTrigger value="listings">Tilbud</TabsTrigger>
             <TabsTrigger value="scraping">Scraping</TabsTrigger>
             <TabsTrigger value="ai">AI Jobs</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="images">
+            <ProductImageManager />
+          </TabsContent>
+
+          <TabsContent value="urls">
+            <MerchantUrlManager />
+          </TabsContent>
 
           <TabsContent value="products" className="space-y-4">
             <Card>
@@ -126,30 +144,6 @@ const Admin = () => {
               <CardContent>
                 <p className="text-muted-foreground mb-4">
                   Bruk SQL Editor i Supabase for å administrere produkter.
-                </p>
-                <Button
-                  onClick={() => window.open('https://supabase.com/dashboard/project/yfutdebllhsawqzihysx/sql/new', '_blank')}
-                >
-                  Åpne SQL Editor
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="merchants" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Store className="h-5 w-5" />
-                  Butikkadministrasjon
-                </CardTitle>
-                <CardDescription>
-                  Administrer butikker og deres informasjon
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground mb-4">
-                  Bruk SQL Editor i Supabase for å administrere butikker.
                 </p>
                 <Button
                   onClick={() => window.open('https://supabase.com/dashboard/project/yfutdebllhsawqzihysx/sql/new', '_blank')}
