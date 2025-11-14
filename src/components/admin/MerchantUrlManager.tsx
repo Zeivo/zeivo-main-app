@@ -65,14 +65,10 @@ export const MerchantUrlManager = () => {
   // Add merchant URL
   const addMutation = useMutation({
     mutationFn: async (url: typeof newUrl) => {
-      console.log('Inserting URL:', url);
       const { error } = await supabase
         .from("merchant_urls")
         .insert([url]);
-      if (error) {
-        console.error('Insert error:', error);
-        throw error;
-      }
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["merchant-urls"] });
