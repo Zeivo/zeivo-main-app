@@ -141,47 +141,39 @@ export type Database = {
       }
       merchant_urls: {
         Row: {
+          category: string
           created_at: string
           id: string
           is_active: boolean
           last_scraped_at: string | null
           merchant_name: string
-          product_id: string
           updated_at: string
           url: string
           url_type: string
         }
         Insert: {
+          category: string
           created_at?: string
           id?: string
           is_active?: boolean
           last_scraped_at?: string | null
           merchant_name: string
-          product_id: string
           updated_at?: string
           url: string
           url_type: string
         }
         Update: {
+          category?: string
           created_at?: string
           id?: string
           is_active?: boolean
           last_scraped_at?: string | null
           merchant_name?: string
-          product_id?: string
           updated_at?: string
           url?: string
           url_type?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "merchant_urls_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       merchants: {
         Row: {
