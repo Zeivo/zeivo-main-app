@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 
 interface MerchantUrl {
   id: string;
-  product_id: string;
+  category: string;
   merchant_name: string;
   url: string;
   url_type: string;
@@ -23,33 +23,29 @@ interface MerchantUrl {
   created_at: string;
 }
 
-interface Product {
-  id: string;
-  name: string;
-  slug: string;
-}
-
 export const MerchantUrlManager = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newUrl, setNewUrl] = useState({
-    product_id: "",
+    category: "",
     merchant_name: "",
     url: "",
     url_type: "category" as "category" | "product",
   });
 
-  // Fetch products
-  const { data: products } = useQuery({
-    queryKey: ["admin-products"],
+  // Fetch unique categories
+  const { data: categories } = useQuery({
+    queryKey: ["product-categories"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, name, slug")
-        .order("name");
+        .select("category")
+        .order("category");
       if (error) throw error;
-      return data as Product[];
+      // Get unique categories
+      const uniqueCategories = [...new Set(data.map(p => p.category))];
+      return uniqueCategories;
     },
   });
 
@@ -76,7 +72,7 @@ export const MerchantUrlManager = () => {
       queryClient.invalidateQueries({ queryKey: ["merchant-urls"] });
       toast({ title: "Merchant URL added successfully" });
       setIsAddDialogOpen(false);
-      setNewUrl({ product_id: "", merchant_name: "", url: "", url_type: "category" });
+      setNewUrl({ category: "", merchant_name: "", url: "", url_type: "category" });
     },
     onError: (error) => {
       toast({
@@ -120,9 +116,6 @@ export const MerchantUrlManager = () => {
     },
   });
 
-  const getProductName = (productId: string) => {
-    return products?.find((p) => p.id === productId)?.name || "Unknown";
-  };
 
   return (
     <Card>
@@ -131,7 +124,7 @@ export const MerchantUrlManager = () => {
           <div>
             <CardTitle>Merchant URLs</CardTitle>
             <CardDescription>
-              Manage crawl URLs for retailers. Use category URLs to crawl entire product sections.
+              Manage crawl URLs for retailers by category. One URL can serve multiple products in the same category.
             </CardDescription>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -150,20 +143,20 @@ export const MerchantUrlManager = () => {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Product</Label>
+                  <Label>Category</Label>
                   <Select
-                    value={newUrl.product_id}
+                    value={newUrl.category}
                     onValueChange={(value) =>
-                      setNewUrl({ ...newUrl, product_id: value })
+                      setNewUrl({ ...newUrl, category: value })
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select product" />
+                      <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {products?.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name}
+                      {categories?.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -219,7 +212,7 @@ export const MerchantUrlManager = () => {
                 <Button
                   onClick={() => addMutation.mutate(newUrl)}
                   disabled={
-                    !newUrl.product_id ||
+                    !newUrl.category ||
                     !newUrl.merchant_name ||
                     !newUrl.url ||
                     addMutation.isPending
@@ -241,7 +234,7 @@ export const MerchantUrlManager = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Product</TableHead>
+                <TableHead>Category</TableHead>
                 <TableHead>Merchant</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>URL</TableHead>
@@ -254,7 +247,7 @@ export const MerchantUrlManager = () => {
               {merchantUrls.map((url) => (
                 <TableRow key={url.id}>
                   <TableCell className="font-medium">
-                    {getProductName(url.product_id)}
+                    {url.category}
                   </TableCell>
                   <TableCell>{url.merchant_name}</TableCell>
                   <TableCell>
