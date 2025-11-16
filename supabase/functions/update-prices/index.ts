@@ -478,11 +478,11 @@ serve(async (req: Request) => {
       totalScraped += scrapedListings.length;
       requestsUsed++;
 
-      // Get merchant URLs for this product
+      // Get merchant URLs for this product category
       const { data: merchantUrls } = await supabase
         .from('merchant_urls')
         .select('*')
-        .eq('product_id', product.id)
+        .eq('category', product.category)
         .eq('is_active', true);
 
       // Scrape retailers for new products (budget permitting)
