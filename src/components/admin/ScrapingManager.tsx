@@ -32,15 +32,17 @@ export const ScrapingManager = () => {
     }
   };
 
-  const handleUpdatePrices = async () => {
+  const handleUpdatePrices = async (force: boolean = false) => {
     setIsUpdating(true);
     try {
       toast({
-        title: "Starter prisopdatering",
+        title: force ? "Tvinger prisopdatering" : "Starter prisopdatering",
         description: "Dette kan ta flere minutter...",
       });
 
-      const { data, error } = await supabase.functions.invoke('update-prices');
+      const { data, error } = await supabase.functions.invoke('update-prices', {
+        body: { force }
+      });
 
       if (error) throw error;
 
@@ -98,7 +100,7 @@ export const ScrapingManager = () => {
         <CardContent className="space-y-4">
           <div className="flex gap-3">
             <Button 
-              onClick={handleUpdatePrices} 
+              onClick={() => handleUpdatePrices(false)} 
               disabled={isUpdating}
               className="flex-1"
             >
@@ -113,6 +115,13 @@ export const ScrapingManager = () => {
                   Oppdater priser
                 </>
               )}
+            </Button>
+            <Button 
+              onClick={() => handleUpdatePrices(true)} 
+              disabled={isUpdating}
+              variant="outline"
+            >
+              Tving oppdatering
             </Button>
             <Button 
               onClick={fetchBudget} 

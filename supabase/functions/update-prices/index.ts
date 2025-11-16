@@ -421,7 +421,10 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    console.log('Starting intelligent price scraping...');
+    // Check if force scraping is enabled
+    const { force } = await req.json().catch(() => ({ force: false }));
+    
+    console.log('Starting intelligent price scraping...', force ? '(FORCED)' : '');
 
     // Check budget
     const budget = await getBudgetForToday(supabase);
@@ -463,14 +466,16 @@ serve(async (req: Request) => {
 
       console.log(`\n=== Processing: ${product.name} (Priority: ${product.priority_score}) ===`);
 
-      // Check if product needs scraping based on frequency
-      const hoursSinceLastScrape = product.last_scraped_at 
-        ? (Date.now() - new Date(product.last_scraped_at).getTime()) / (1000 * 60 * 60)
-        : Infinity;
-        
-      if (hoursSinceLastScrape < (product.scrape_frequency_hours || 24)) {
-        console.log(`Skipping - scraped ${Math.floor(hoursSinceLastScrape)}h ago`);
-        continue;
+      // Check if product needs scraping based on frequency (unless forced)
+      if (!force) {
+        const hoursSinceLastScrape = product.last_scraped_at 
+          ? (Date.now() - new Date(product.last_scraped_at).getTime()) / (1000 * 60 * 60)
+          : Infinity;
+          
+        if (hoursSinceLastScrape < (product.scrape_frequency_hours || 24)) {
+          console.log(`Skipping - scraped ${Math.floor(hoursSinceLastScrape)}h ago`);
+          continue;
+        }
       }
 
       // Scrape Finn.no for used listings
