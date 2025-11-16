@@ -23,7 +23,6 @@ const Product = () => {
     isLoading: variantsLoading
   } = useProductVariants(product?.id);
   const [selectedStorage, setSelectedStorage] = useState<string>("");
-  const [selectedColor, setSelectedColor] = useState<string>("");
   const [selectedModel, setSelectedModel] = useState<string>("");
 
   // Extract unique options from variants
@@ -31,31 +30,26 @@ const Product = () => {
     const options = [...new Set(variants.map(v => v.storage_gb).filter(Boolean))];
     return options.sort((a, b) => a - b);
   }, [variants]);
-  const colorOptions = useMemo(() => {
-    return [...new Set(variants.map(v => v.color).filter(Boolean))];
-  }, [variants]);
   const modelOptions = useMemo(() => {
     return [...new Set(variants.map(v => v.model).filter(Boolean))];
   }, [variants]);
 
   // Set initial selections when variants load
   useMemo(() => {
-    if (variants.length > 0 && !selectedStorage && !selectedColor && !selectedModel) {
+    if (variants.length > 0 && !selectedStorage && !selectedModel) {
       if (storageOptions.length > 0) setSelectedStorage(storageOptions[0].toString());
-      if (colorOptions.length > 0) setSelectedColor(colorOptions[0]);
       if (modelOptions.length > 0) setSelectedModel(modelOptions[0]);
     }
-  }, [variants, storageOptions, colorOptions, modelOptions, selectedStorage, selectedColor, selectedModel]);
+  }, [variants, storageOptions, modelOptions, selectedStorage, selectedModel]);
 
   // Find the matching variant based on selections
   const selectedVariant = useMemo(() => {
     return variants.find(v => {
       const storageMatch = !selectedStorage || v.storage_gb?.toString() === selectedStorage;
-      const colorMatch = !selectedColor || v.color === selectedColor;
       const modelMatch = !selectedModel || v.model === selectedModel;
-      return storageMatch && colorMatch && modelMatch;
+      return storageMatch && modelMatch;
     });
-  }, [variants, selectedStorage, selectedColor, selectedModel]);
+  }, [variants, selectedStorage, selectedModel]);
 
   // Fetch merchant listings for the selected variant
   const { data: listings = [], isLoading: listingsLoading } = useVariantListings(selectedVariant?.id);
@@ -115,20 +109,6 @@ const Product = () => {
                           <SelectContent className="bg-popover z-50">
                             {storageOptions.map(storage => <SelectItem key={storage} value={storage.toString()}>
                                 {storage} GB
-                              </SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>}
-
-                    {colorOptions.length > 0 && <div className="space-y-2">
-                        <Label>Farge</Label>
-                        <Select value={selectedColor} onValueChange={setSelectedColor}>
-                          <SelectTrigger className="bg-background">
-                            <SelectValue placeholder="Velg farge" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-popover z-50">
-                            {colorOptions.map(color => <SelectItem key={color} value={color}>
-                                {color}
                               </SelectItem>)}
                           </SelectContent>
                         </Select>
@@ -197,7 +177,6 @@ const VariantCard = ({
       <CardHeader>
         <CardTitle className="text-xl">
           {variant.storage_gb && `${variant.storage_gb}GB`}
-          {variant.color && ` • ${variant.color}`}
           {variant.model && ` • ${variant.model}`}
         </CardTitle>
       </CardHeader>

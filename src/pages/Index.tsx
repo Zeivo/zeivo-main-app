@@ -151,7 +151,7 @@ const Index = () => {
                       <img
                         src={product.image}
                         alt={product.name}
-                        className="w-full h-48 object-cover rounded-md mb-4"
+                        className="w-full h-48 object-contain rounded-md mb-4"
                       />
                     )}
                     <Badge className="w-fit mb-2">{product.category}</Badge>
