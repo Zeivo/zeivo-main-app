@@ -1,6 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useState, useMemo } from "react";
-import { useProduct, useProductVariants } from "@/hooks/useProducts";
+import { useProduct, useProductVariants, useVariantListings } from "@/hooks/useProducts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +56,9 @@ const Product = () => {
       return storageMatch && colorMatch && modelMatch;
     });
   }, [variants, selectedStorage, selectedColor, selectedModel]);
+
+  // Fetch merchant listings for the selected variant
+  const { data: listings = [], isLoading: listingsLoading } = useVariantListings(selectedVariant?.id);
   if (productLoading || variantsLoading) {
     return <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -148,7 +151,7 @@ const Product = () => {
                 </Card>
 
                 {/* Selected Variant Display */}
-                {selectedVariant && <VariantCard variant={selectedVariant} productName={product.name} />}
+                {selectedVariant && <VariantCard variant={selectedVariant} productName={product.name} listings={listings} listingsLoading={listingsLoading} />}
               </div>}
           </div>
         </div>
@@ -167,17 +170,24 @@ const Product = () => {
 };
 const VariantCard = ({
   variant,
-  productName
+  productName,
+  listings,
+  listingsLoading
 }: {
   variant: any;
   productName: string;
+  listings: any[];
+  listingsLoading: boolean;
 }) => {
   const priceData = variant.price_data;
   const newPriceData = priceData?.new;
   const usedPriceData = priceData?.used;
   const hasNewPrice = variant.price_new && variant.price_new > 0;
   const hasUsedPrice = usedPriceData?.price_range && variant.price_used && variant.price_used > 0;
-  const finnSearchUrl = `https://www.finn.no/bap/forsale/search.html?q=${encodeURIComponent(`${productName} ${variant.storage_gb ? variant.storage_gb + 'GB' : ''} ${variant.color || ''}`)}`;
+  
+  // Separate listings by condition
+  const newListings = listings.filter(l => l.condition === 'new');
+  const usedListings = listings.filter(l => l.condition === 'used');
 
   // Don't render card if no price data at all
   if (!hasNewPrice && !hasUsedPrice) {
@@ -193,19 +203,51 @@ const VariantCard = ({
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid md:grid-cols-2 gap-4">
-          {hasNewPrice && <PriceRangeDisplay priceRange={{
-          min: variant.price_new,
-          max: variant.price_new,
-          median: variant.price_new
-        }} condition="new" />}
+          {hasNewPrice && <div className="space-y-3">
+              <PriceRangeDisplay priceRange={{
+              min: variant.price_new,
+              max: variant.price_new,
+              median: variant.price_new
+            }} condition="new" />
+              
+              {/* New condition merchant links */}
+              {!listingsLoading && newListings.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Kjøp ny:</p>
+                  {newListings.slice(0, 3).map(listing => (
+                    <Button key={listing.id} asChild variant="outline" size="sm" className="w-full justify-between">
+                      <a href={listing.url} target="_blank" rel="noopener noreferrer">
+                        <span>{listing.merchant_name}</span>
+                        <span className="flex items-center gap-2">
+                          {listing.price} kr
+                          <ExternalLink className="h-3 w-3" />
+                        </span>
+                      </a>
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>}
           {hasUsedPrice && <div className="space-y-3">
               <PriceRangeDisplay priceRange={usedPriceData.price_range} qualityTiers={Object.keys(usedPriceData.tiers || {}).length > 0 ? usedPriceData.tiers : undefined} condition="used" />
-              <Button asChild variant="outline" className="w-full">
-                <a href={finnSearchUrl} target="_blank" rel="noopener noreferrer">
-                  Se tilbud på Finn.no
-                  <ExternalLink className="ml-2 h-4 w-4" />
-                </a>
-              </Button>
+              
+              {/* Used condition merchant links */}
+              {!listingsLoading && usedListings.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Kjøp brukt:</p>
+                  {usedListings.slice(0, 3).map(listing => (
+                    <Button key={listing.id} asChild variant="outline" size="sm" className="w-full justify-between">
+                      <a href={listing.url} target="_blank" rel="noopener noreferrer">
+                        <span>{listing.merchant_name}</span>
+                        <span className="flex items-center gap-2">
+                          {listing.price} kr
+                          <ExternalLink className="h-3 w-3" />
+                        </span>
+                      </a>
+                    </Button>
+                  ))}
+                </div>
+              )}
             </div>}
         </div>
       </CardContent>
