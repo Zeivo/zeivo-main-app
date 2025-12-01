@@ -1,0 +1,4 @@
+ALTER TABLE products
+ADD COLUMN priority_score INT NOT NULL DEFAULT 50,
+ADD COLUMN scrape_frequency_hours INT NOT NULL DEFAULT 24,
+ADD COLUMN last_scraped_at TIMESTAMPTZ;

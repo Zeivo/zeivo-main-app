@@ -1,158 +1,64 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeaders } from '../_shared/cors.ts'
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')
 
-serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  const today = new Date().toISOString().split('T')[0]
+  const { increment } = await req.json().catch(() => ({ increment: 0 }))
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-    );
+    // Check for existing budget entry for today
+    let { data: budget, error } = await supabase
+      .from('scrape_budget')
+      .select('*')
+      .eq('date', today)
+      .single()
 
-    const { action, amount } = await req.json();
-    const today = new Date().toISOString().split('T')[0];
-
-    if (action === 'get') {
-      // Get current budget status
-      const { data: budget } = await supabase
+    // If no entry, create one
+    if (!budget) {
+      const { data: newBudget, error: newBudgetError } = await supabase
         .from('scrape_budget')
-        .select('*')
+        .insert({ date: today, daily_limit: 100, requests_used: 0 })
+        .single()
+      
+      if (newBudgetError) throw newBudgetError
+      budget = newBudget
+    }
+
+    if (error && error.code !== 'PGRST116') { // Ignore 'single row not found'
+      throw error
+    }
+
+    // If increment is passed, update the budget
+    if (increment > 0) {
+      const { data: updatedBudget, error: updateError } = await supabase
+        .from('scrape_budget')
+        .update({ requests_used: budget.requests_used + increment })
         .eq('date', today)
-        .single();
+        .single()
 
-      if (!budget) {
-        // Create today's budget
-        const { data: newBudget, error } = await supabase
-          .from('scrape_budget')
-          .insert({
-            date: today,
-            budget_total: 100,
-            budget_used: 0,
-            budget_remaining: 100
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        return new Response(
-          JSON.stringify({ 
-            success: true,
-            budget: newBudget
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({ 
-          success: true,
-          budget
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (updateError) throw updateError
+      budget = updatedBudget
     }
 
-    if (action === 'allocate') {
-      // Allocate budget for a scraping request
-      const { data: budget } = await supabase
-        .from('scrape_budget')
-        .select('*')
-        .eq('date', today)
-        .single();
+    const canScrape = budget.requests_used < budget.daily_limit
 
-      if (!budget) {
-        return new Response(
-          JSON.stringify({ 
-            success: false,
-            error: 'No budget found for today'
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-        );
-      }
-
-      if (budget.budget_remaining < amount) {
-        return new Response(
-          JSON.stringify({ 
-            success: false,
-            error: 'Insufficient budget',
-            remaining: budget.budget_remaining
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 429 }
-        );
-      }
-
-      // Update budget
-      const { error } = await supabase
-        .from('scrape_budget')
-        .update({
-          budget_used: budget.budget_used + amount,
-          budget_remaining: budget.budget_remaining - amount
-        })
-        .eq('date', today);
-
-      if (error) throw error;
-
-      return new Response(
-        JSON.stringify({ 
-          success: true,
-          allocated: amount,
-          remaining: budget.budget_remaining - amount
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (action === 'reset') {
-      // Reset budget (admin only)
-      const { error } = await supabase
-        .from('scrape_budget')
-        .upsert({
-          date: today,
-          budget_total: 100,
-          budget_used: 0,
-          budget_remaining: 100
-        });
-
-      if (error) throw error;
-
-      return new Response(
-        JSON.stringify({ 
-          success: true,
-          message: 'Budget reset successfully'
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        error: 'Invalid action. Use: get, allocate, or reset' 
-      }),
-      { 
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
-    );
-
+    return new Response(JSON.stringify({ canScrape, budget }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   } catch (error) {
-    console.error('Error in budget-manager:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
-    );
+    console.error('Error in budget-manager:', error)
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500,
+    })
   }
-});
+})

@@ -4,14 +4,14 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, Store, Tag, ArrowLeft, Shield, Brain, Activity, Image as ImageIcon, Link2 } from "lucide-react";
+import { Package, Store, Tag, ArrowLeft, Shield, Brain, Activity, Image as ImageIcon, Link2, BarChart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { ScrapingManager } from "@/components/admin/ScrapingManager";
 import { MerchantUrlManager } from "@/components/admin/MerchantUrlManager";
 import { ProductImageManager } from "@/components/admin/ProductImageManager";
-
+import { ProductPriorityManager } from "@/components/admin/ProductPriorityManager";
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -106,8 +106,12 @@ const Admin = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="images" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 max-w-4xl">
+        <Tabs defaultValue="priority" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-7 max-w-5xl">
+            <TabsTrigger value="priority">
+              <BarChart className="h-4 w-4 mr-2" />
+              Priority
+            </TabsTrigger>
             <TabsTrigger value="images">
               <ImageIcon className="h-4 w-4 mr-2" />
               Bilder
@@ -121,6 +125,10 @@ const Admin = () => {
             <TabsTrigger value="scraping">Scraping</TabsTrigger>
             <TabsTrigger value="ai">AI Jobs</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="priority">
+            <ProductPriorityManager />
+          </TabsContent>
 
           <TabsContent value="images">
             <ProductImageManager />

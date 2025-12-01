@@ -37,10 +37,20 @@ interface ScrapedListing {
   title: string;
 }
 
-async function scrapeWithFirecrawl(url: string): Promise<{ markdown: string } | null> {
+async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdown: string } | null> {
   const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
   if (!firecrawlApiKey) {
     console.error('FIRECRAWL_API_KEY not configured');
+    return null;
+  }
+  
+  // Check budget before scraping
+  const { data: canScrape, error: budgetError } = await supabase.functions.invoke('budget-manager', {
+    body: {},
+  });
+
+  if (budgetError || !canScrape?.canScrape) {
+    console.log('Scraping budget exhausted, skipping Firecrawl request.');
     return null;
   }
 
@@ -63,6 +73,11 @@ async function scrapeWithFirecrawl(url: string): Promise<{ markdown: string } | 
       console.error(`Firecrawl error for ${url}:`, response.status, errorText);
       return null;
     }
+    
+    // Increment budget after successful scrape
+    await supabase.functions.invoke('budget-manager', {
+      body: { increment: 1 },
+    });
 
     const data = await response.json();
     return { markdown: data.data?.markdown || '' };
@@ -72,12 +87,12 @@ async function scrapeWithFirecrawl(url: string): Promise<{ markdown: string } | 
   }
 }
 
-async function scrapeFinnNo(productName: string, category: string): Promise<ScrapedListing[]> {
+async function scrapeFinnNo(supabase: any, productName: string, category: string): Promise<ScrapedListing[]> {
   const searchQuery = encodeURIComponent(productName);
   const finnUrl = `https://www.finn.no/bap/forsale/search.html?q=${searchQuery}`;
   
   console.log(`Scraping Finn.no for: ${productName}`);
-  const result = await scrapeWithFirecrawl(finnUrl);
+  const result = await scrapeWithFirecrawl(supabase, finnUrl);
   
   if (!result?.markdown) {
     console.log('No markdown content from Finn.no');
@@ -319,8 +334,8 @@ Return the analysis with matched listings grouped by variant, price tiers, and m
   return null;
 }
 
-async function scrapeRetailerWithFirecrawl(url: string, retailerName: string): Promise<ScrapedListing[]> {
-  const result = await scrapeWithFirecrawl(url);
+async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerName: string): Promise<ScrapedListing[]> {
+  const result = await scrapeWithFirecrawl(supabase, url);
   
   if (!result?.markdown) {
     console.log(`No markdown content from ${retailerName}`);
@@ -367,49 +382,6 @@ async function scrapeRetailerWithFirecrawl(url: string, retailerName: string): P
   return listings;
 }
 
-async function getBudgetForToday(supabase: any): Promise<{ remaining: number; total: number }> {
-  const today = new Date().toISOString().split('T')[0];
-  
-  const { data: budget } = await supabase
-    .from('scrape_budget')
-    .select('*')
-    .eq('date', today)
-    .single();
-    
-  if (!budget) {
-    // Create today's budget
-    await supabase.from('scrape_budget').insert({
-      date: today,
-      budget_total: 100,
-      budget_used: 0,
-      budget_remaining: 100
-    });
-    return { remaining: 100, total: 100 };
-  }
-  
-  return { remaining: budget.budget_remaining, total: budget.budget_total };
-}
-
-async function updateBudgetUsage(supabase: any, used: number) {
-  const today = new Date().toISOString().split('T')[0];
-  
-  const { data: budget } = await supabase
-    .from('scrape_budget')
-    .select('*')
-    .eq('date', today)
-    .single();
-    
-  if (budget) {
-    await supabase
-      .from('scrape_budget')
-      .update({
-        budget_used: budget.budget_used + used,
-        budget_remaining: budget.budget_remaining - used
-      })
-      .eq('date', today);
-  }
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -426,21 +398,6 @@ serve(async (req: Request) => {
     
     console.log('Starting intelligent price scraping...', force ? '(FORCED)' : '');
 
-    // Check budget
-    const budget = await getBudgetForToday(supabase);
-    console.log(`Daily budget: ${budget.remaining}/${budget.total} requests remaining`);
-    
-    if (budget.remaining <= 0) {
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          message: 'Daily scraping budget exhausted',
-          budget
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Fetch products ordered by priority
     const { data: products, error: productsError } = await supabase
       .from('products')
@@ -455,15 +412,9 @@ serve(async (req: Request) => {
 
     const results = [];
     let totalScraped = 0;
-    let requestsUsed = 0;
-    const maxRequests = Math.min(budget.remaining, 50); // Cap per run
+    const maxRequests = 50; // Cap per run
 
     for (const product of products || []) {
-      if (requestsUsed >= maxRequests) {
-        console.log(`Reached request limit (${maxRequests}), stopping`);
-        break;
-      }
-
       console.log(`\n=== Processing: ${product.name} (Priority: ${product.priority_score}) ===`);
 
       // Check if product needs scraping based on frequency (unless forced)
@@ -479,9 +430,8 @@ serve(async (req: Request) => {
       }
 
       // Scrape Finn.no for used listings
-      const scrapedListings = await scrapeFinnNo(product.name, product.category);
+      const scrapedListings = await scrapeFinnNo(supabase, product.name, product.category);
       totalScraped += scrapedListings.length;
-      requestsUsed++;
 
       // Get merchant URLs for this product category
       const { data: merchantUrls } = await supabase
@@ -490,16 +440,16 @@ serve(async (req: Request) => {
         .eq('category', product.category)
         .eq('is_active', true);
 
-      // Scrape retailers for new products (budget permitting)
+      // Scrape retailers for new products
       const retailerListings: ScrapedListing[] = [];
-      if (merchantUrls && requestsUsed < maxRequests) {
-        for (const merchantUrl of merchantUrls.slice(0, maxRequests - requestsUsed)) {
+      if (merchantUrls) {
+        for (const merchantUrl of merchantUrls) {
           const listings = await scrapeRetailerWithFirecrawl(
+            supabase, 
             merchantUrl.url, 
             merchantUrl.merchant_name
           );
           retailerListings.push(...listings);
-          requestsUsed++;
           
           // Update last_scraped_at for this URL
           await supabase
@@ -644,12 +594,8 @@ serve(async (req: Request) => {
         .eq('id', product.id);
     }
 
-    // Update budget usage
-    await updateBudgetUsage(supabase, requestsUsed);
-
     console.log('\n=== Price update completed ===');
     console.log(`Scraped ${totalScraped} new listings`);
-    console.log(`Used ${requestsUsed} requests`);
     console.log(`Processed ${results.length} variants across ${products?.length || 0} products`);
 
     return new Response(
