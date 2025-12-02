@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "invoke:update": "supabase functions invoke update-prices --no-verify-jwt"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

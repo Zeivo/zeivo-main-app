@@ -4,7 +4,7 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, Store, Tag, ArrowLeft, Shield, Brain, Activity, Image as ImageIcon, Link2, BarChart } from "lucide-react";
+import { Package, Store, Tag, ArrowLeft, Shield, Brain, Activity, Image as ImageIcon, Link2, BarChart, TestTube2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -94,6 +94,10 @@ const Admin = () => {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">{user.email}</span>
+            <Button variant="outline" size="sm" onClick={() => navigate("/test-scraper")}>
+              <TestTube2 className="h-4 w-4 mr-2" />
+              Test Scraper
+            </Button>
             <Button variant="outline" size="sm" onClick={() => navigate("/test-vertex-ai")}>
               Test Vertex AI
             </Button>
@@ -170,7 +174,7 @@ const Admin = () => {
                   Tilbudsadministrasjon
                 </CardTitle>
                 <CardDescription>
-                  Administrer pristilbud fra butikker
+                  Administrer pristilbud from butikker
                 </CardDescription>
               </CardHeader>
               <CardContent>

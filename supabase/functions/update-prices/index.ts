@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
@@ -12,6 +13,9 @@ interface Product {
   slug: string;
   category: string;
   brand?: string;
+  priority_score?: number;
+  last_scraped_at?: string;
+  scrape_frequency_hours?: number;
 }
 
 interface MerchantListing {
@@ -44,12 +48,11 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
     return null;
   }
   
-  // Check budget before scraping
-  const { data: canScrape, error: budgetError } = await supabase.functions.invoke('budget-manager', {
-    body: {},
+  const { data, error: budgetError } = await supabase.functions.invoke('budget-manager', {
+    body: { action: 'get' },
   });
 
-  if (budgetError || !canScrape?.canScrape) {
+  if (budgetError || !data?.canScrape) {
     console.log('Scraping budget exhausted, skipping Firecrawl request.');
     return null;
   }
@@ -64,7 +67,9 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
       },
       body: JSON.stringify({
         url,
-        formats: ['markdown'],
+        crawlerOptions: { 
+          pageOptions: { onlyMainContent: true }
+        },
       }),
     });
 
@@ -74,13 +79,12 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
       return null;
     }
     
-    // Increment budget after successful scrape
     await supabase.functions.invoke('budget-manager', {
-      body: { increment: 1 },
+      body: { action: 'increment', increment: 1 },
     });
 
-    const data = await response.json();
-    return { markdown: data.data?.markdown || '' };
+    const responseData = await response.json();
+    return { markdown: responseData.data?.markdown || '' };
   } catch (error) {
     console.error(`Error scraping ${url} with Firecrawl:`, error);
     return null;
@@ -102,35 +106,32 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
   const listings: ScrapedListing[] = [];
   const lines = result.markdown.split('\n');
   
-  let currentListing: Partial<ScrapedListing> = {};
-  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Look for price patterns (e.g., "5 990 kr", "5990 kr", "kr 5990")
     const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
     if (priceMatch) {
       const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
       const price = parseInt(priceStr, 10);
       
       if (price > 100 && price < 1000000) {
-        currentListing.price = price;
-        currentListing.merchant_name = 'Finn.no';
-        currentListing.condition = 'used'; // Finn.no is primarily used items
-        currentListing.url = finnUrl;
-        
-        // Look for title in nearby lines
+        let title = '';
         for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
           const nearbyLine = lines[j].trim();
           if (nearbyLine.length > 10 && nearbyLine.length < 200 && !nearbyLine.match(/kr/i)) {
-            currentListing.title = nearbyLine;
+            title = nearbyLine;
             break;
           }
         }
         
-        if (currentListing.title) {
-          listings.push(currentListing as ScrapedListing);
-          currentListing = {};
+        if (title) {
+          listings.push({
+            merchant_name: 'Finn.no',
+            price,
+            condition: 'used',
+            url: finnUrl, // TODO: try to extract specific listing URL
+            title,
+          });
         }
       }
     }
@@ -151,7 +152,7 @@ interface BatchNormalizationResult {
   matched_listings: {
     variant_id: string;
     listings: {
-      finn_listing_index: number;
+      listing_index: number;
       confidence: number;
       condition_quality: string;
       price: number;
@@ -172,7 +173,7 @@ interface BatchNormalizationResult {
   };
 }
 
-async function batchNormalizeFinnListings(
+async function batchNormalizeListings(
   productName: string,
   category: string,
   variants: VariantSpec[],
@@ -180,7 +181,7 @@ async function batchNormalizeFinnListings(
 ): Promise<BatchNormalizationResult | null> {
   const vertexApiKey = Deno.env.get('VERTEX_AI_API_KEY');
   if (!vertexApiKey || listings.length === 0) {
-    console.log('No Vertex AI key or no listings');
+    console.log('No Vertex AI key or no listings to process.');
     return null;
   }
 
@@ -193,32 +194,35 @@ Category: ${category}
 Available Variants:
 ${JSON.stringify(variants, null, 2)}
 
-Finn.no Listings:
-${JSON.stringify(listings.map((l, i) => ({ index: i, title: l.title, price: l.price, url: l.url })), null, 2)}
+Scraped Product Listings:
+${JSON.stringify(listings.map((l, i) => ({ index: i, merchant: l.merchant_name, title: l.title, price: l.price, url: l.url })), null, 2)}
 
 Tasks:
-1. Match each listing to a variant (or mark as unmatched)
-2. Assess listing quality based on title
-3. Group listings by variant
-4. Calculate price ranges and tiers per variant
-5. Generate market insights in Norwegian
+1. Match each listing to one of the available variants. If no suitable variant is found, mark the listing as unmatched.
+2. For each matched listing, assess its condition and quality based on its title.
+3. Group the matched listings by their assigned variant.
+4. For each variant, calculate price ranges and create quality tiers.
+5. Generate overall market insights in Norwegian.
 
-Quality Assessment Guidelines:
-- "excellent": Words like "ny", "ubrukt", "perfekt", "som ny"
-- "good": Words like "lite brukt", "god stand", "fungerer perfekt"
-- "acceptable": Words like "brukt", "normal slitasje"
-- "poor": Words like "defekt", "ødelagt"
+Condition & Quality Assessment Guidelines:
+- Listings from retailers (not Finn.no) should always be considered 'new' and have a quality of 'excellent'.
+- For listings from 'Finn.no' (a used marketplace), use the following title keywords:
+  - "excellent": "ny", "ubrukt", "perfekt", "som ny", "i eske"
+  - "good": "lite brukt", "god stand", "fungerer perfekt"
+  - "acceptable": "brukt", "normal slitasje"
+  - "poor": "defekt", "ødelagt", "trenger reparasjon"
+- If no keywords are present for Finn.no listings, default to "acceptable".
 
 Matching Rules:
-- Match storage GB (128, 256, 512, 1024)
-- Match color (Norwegian and English names)
-- Confidence >0.9: Exact match on storage + color
-- Confidence 0.7-0.9: Match on storage OR color
-- Confidence <0.7: Mark as unmatched
+- Match on storage size (e.g., 128, 256, 512, 1024 GB).
+- Match on color (both Norwegian and English names are possible).
+- Confidence >0.9: Requires an exact match on both storage and color.
+- Confidence 0.7-0.9: Requires a match on either storage or color.
+- Confidence <0.7: The listing should be marked as unmatched.
 
-Return the analysis with matched listings grouped by variant, price tiers, and market insights.`;
+Return the analysis with matched listings grouped by variant, including price tiers and market insights.`;
 
-    console.log(`Batch normalizing ${listings.length} Finn.no listings for ${productName}`);
+    console.log(`Batch normalizing ${listings.length} listings for ${productName}`);
     
     const response = await fetch(
       'https://europe-west4-aiplatform.googleapis.com/v1/projects/zeivo-477017/locations/europe-west4/publishers/google/models/gemini-2.5-flash:generateContent',
@@ -251,14 +255,14 @@ Return the analysis with matched listings grouped by variant, price tiers, and m
                           items: {
                             type: 'object',
                             properties: {
-                              finn_listing_index: { type: 'number' },
+                              listing_index: { type: 'number' },
                               confidence: { type: 'number' },
                               condition_quality: { type: 'string' },
                               price: { type: 'number' },
                               url: { type: 'string' },
                               title: { type: 'string' }
                             },
-                            required: ['finn_listing_index', 'confidence', 'condition_quality', 'price', 'url', 'title']
+                            required: ['listing_index', 'confidence', 'condition_quality', 'price', 'url', 'title']
                           }
                         },
                         price_range: {
@@ -348,7 +352,6 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Look for Norwegian price patterns (e.g., "5 990 kr", "kr 5990")
     const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
     if (priceMatch) {
       const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
@@ -356,7 +359,6 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
       
       if (price > 100 && price < 1000000) {
         let title = '';
-        // Look for title in nearby lines
         for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
           const nearbyLine = lines[j].trim();
           if (nearbyLine.length > 10 && nearbyLine.length < 200 && !nearbyLine.match(/kr/i)) {
@@ -393,31 +395,25 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Check if force scraping is enabled
     const { force } = await req.json().catch(() => ({ force: false }));
     
     console.log('Starting intelligent price scraping...', force ? '(FORCED)' : '');
 
-    // Fetch products ordered by priority
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('*')
       .order('priority_score', { ascending: false });
 
-    if (productsError) {
-      throw productsError;
-    }
+    if (productsError) throw productsError;
 
     console.log(`Found ${products?.length || 0} products to process`);
 
     const results = [];
     let totalScraped = 0;
-    const maxRequests = 50; // Cap per run
 
     for (const product of products || []) {
       console.log(`\n=== Processing: ${product.name} (Priority: ${product.priority_score}) ===`);
 
-      // Check if product needs scraping based on frequency (unless forced)
       if (!force) {
         const hoursSinceLastScrape = product.last_scraped_at 
           ? (Date.now() - new Date(product.last_scraped_at).getTime()) / (1000 * 60 * 60)
@@ -429,18 +425,15 @@ serve(async (req: Request) => {
         }
       }
 
-      // Scrape Finn.no for used listings
       const scrapedListings = await scrapeFinnNo(supabase, product.name, product.category);
       totalScraped += scrapedListings.length;
 
-      // Get merchant URLs for this product category
       const { data: merchantUrls } = await supabase
         .from('merchant_urls')
         .select('*')
         .eq('category', product.category)
         .eq('is_active', true);
 
-      // Scrape retailers for new products
       const retailerListings: ScrapedListing[] = [];
       if (merchantUrls) {
         for (const merchantUrl of merchantUrls) {
@@ -451,7 +444,6 @@ serve(async (req: Request) => {
           );
           retailerListings.push(...listings);
           
-          // Update last_scraped_at for this URL
           await supabase
             .from('merchant_urls')
             .update({ last_scraped_at: new Date().toISOString() })
@@ -459,7 +451,6 @@ serve(async (req: Request) => {
         }
       }
 
-      // Get all variants for this product
       const { data: variants, error: variantsError } = await supabase
         .from('product_variants')
         .select('id, storage_gb, color, model')
@@ -472,18 +463,12 @@ serve(async (req: Request) => {
 
       console.log(`Found ${variants.length} variants`);
 
-      // Batch normalize with AI
       const allListings = [...scrapedListings, ...retailerListings];
       if (allListings.length > 0 && variants.length > 0) {
-        const batchResult = await batchNormalizeFinnListings(
+        const batchResult = await batchNormalizeListings(
           product.name,
           product.category,
-          variants.map(v => ({
-            id: v.id,
-            storage_gb: v.storage_gb,
-            color: v.color,
-            model: v.model
-          })),
+          variants.map(v => ({ id: v.id, storage_gb: v.storage_gb, color: v.color, model: v.model })),
           allListings
         );
 
@@ -491,18 +476,16 @@ serve(async (req: Request) => {
           const listingGroupId = crypto.randomUUID();
           
           for (const variantMatch of batchResult.matched_listings) {
-            // Clear old listings for this variant
             await supabase
               .from('merchant_listings')
               .delete()
               .eq('variant_id', variantMatch.variant_id);
 
-            // Insert matched listings with quality tiers
             const listingsToInsert = variantMatch.listings.map(listing => ({
               variant_id: variantMatch.variant_id,
-              merchant_name: allListings[listing.finn_listing_index].merchant_name,
+              merchant_name: allListings[listing.listing_index].merchant_name,
               price: listing.price,
-              condition: allListings[listing.finn_listing_index].condition,
+              condition: allListings[listing.listing_index].condition,
               url: listing.url,
               is_valid: true,
               confidence: listing.confidence,
@@ -523,7 +506,6 @@ serve(async (req: Request) => {
               }
             }
 
-            // Calculate prices by condition
             const newListings = listingsToInsert.filter(l => l.condition === 'new');
             const usedListings = listingsToInsert.filter(l => l.condition === 'used');
             
@@ -535,7 +517,6 @@ serve(async (req: Request) => {
               ? variantMatch.price_range.median
               : null;
 
-            // Update variant with rich price_data
             const priceData = {
               new: newListings.length > 0 ? {
                 source: 'retailers',
@@ -578,7 +559,6 @@ serve(async (req: Request) => {
               variant: `${variantMatch.variant_id}`,
               price_new,
               price_used,
-              confidence: priceData.used?.total_listings || priceData.new?.total_listings || 0,
               listings_analyzed: variantMatch.listings.length,
             });
           }
@@ -587,7 +567,6 @@ serve(async (req: Request) => {
         }
       }
 
-      // Update product last_scraped_at
       await supabase
         .from('products')
         .update({ last_scraped_at: new Date().toISOString() })
@@ -595,7 +574,7 @@ serve(async (req: Request) => {
     }
 
     console.log('\n=== Price update completed ===');
-    console.log(`Scraped ${totalScraped} new listings`);
+    console.log(`Scraped ${totalScraped + retailerListings.length} new listings`);
     console.log(`Processed ${results.length} variants across ${products?.length || 0} products`);
 
     return new Response(
@@ -605,7 +584,7 @@ serve(async (req: Request) => {
         summary: {
           products_processed: products?.length || 0,
           variants_updated: results.length,
-          listings_scraped: totalScraped,
+          listings_scraped: totalScraped + retailerListings.length,
         }
       }),
       { 
@@ -626,3 +605,4 @@ serve(async (req: Request) => {
     );
   }
 });
+
