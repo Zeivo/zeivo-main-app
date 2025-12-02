@@ -13,7 +13,6 @@ const Admin = lazy(() => import("./pages/Admin"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Support = lazy(() => import("./pages/Support"));
 const TestVertexAI = lazy(() => import("./pages/TestVertexAI"));
-const TestScraper = lazy(() => import("./pages/TestScraper"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -33,7 +32,6 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/support" element={<Support />} />
             <Route path="/test-vertex-ai" element={<TestVertexAI />} />
-            <Route path="/test-scraper" element={<TestScraper />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
