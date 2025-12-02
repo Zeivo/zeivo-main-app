@@ -1,20 +1,35 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { RefreshCw, Loader2, Activity } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+interface Budget {
+  budget_used: number;
+  budget_total: number;
+  budget_remaining: number;
+  date: string;
+}
 
 export const ScrapingManager = () => {
   const [isUpdating, setIsUpdating] = useState(false);
-  const [budget, setBudget] = useState<any>(null);
+  const [isFetchingBudget, setIsFetchingBudget] = useState(false);
+  const [budget, setBudget] = useState<Budget | null>(null);
   const { toast } = useToast();
 
   const fetchBudget = async () => {
+    setIsFetchingBudget(true);
     try {
       const { data, error } = await supabase.functions.invoke('budget-manager', {
-        body: { action: 'get' }
+        body: { action: 'get' },
       });
 
       if (error) throw error;
@@ -29,8 +44,14 @@ export const ScrapingManager = () => {
         description: error.message || "Kunne ikke hente budsjettinformasjon",
         variant: "destructive",
       });
+    } finally {
+      setIsFetchingBudget(false);
     }
   };
+
+  useEffect(() => {
+    fetchBudget();
+  }, []);
 
   const handleUpdatePrices = async (force: boolean = false) => {
     setIsUpdating(true);
@@ -41,14 +62,16 @@ export const ScrapingManager = () => {
       });
 
       const { data, error } = await supabase.functions.invoke('update-prices', {
-        body: { force }
+        body: { force },
       });
 
       if (error) throw error;
 
       toast({
         title: "Prisopdatering fullført",
-        description: `Oppdatert ${data.summary?.variants_updated || 0} varianter fra ${data.summary?.listings_scraped || 0} annonser`,
+        description: `Oppdatert ${
+          data.summary?.variants_updated || 0
+        } varianter fra ${data.summary?.listings_scraped || 0} annonser`,
       });
 
       await fetchBudget();
@@ -67,7 +90,7 @@ export const ScrapingManager = () => {
   const handleResetBudget = async () => {
     try {
       const { error } = await supabase.functions.invoke('budget-manager', {
-        body: { action: 'reset' }
+        body: { action: 'reset' },
       });
 
       if (error) throw error;
@@ -99,8 +122,8 @@ export const ScrapingManager = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-3">
-            <Button 
-              onClick={() => handleUpdatePrices(false)} 
+            <Button
+              onClick={() => handleUpdatePrices(false)}
               disabled={isUpdating}
               className="flex-1"
             >
@@ -116,18 +139,33 @@ export const ScrapingManager = () => {
                 </>
               )}
             </Button>
-            <Button 
-              onClick={() => handleUpdatePrices(true)} 
-              disabled={isUpdating}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => handleUpdatePrices(true)}
+                  disabled={isUpdating}
+                  variant="outline"
+                >
+                  Tving oppdatering
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Overstyrer daglig budsjett og skraper alle aktive produkter</p>
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              onClick={fetchBudget}
               variant="outline"
+              disabled={isFetchingBudget || isUpdating}
             >
-              Tving oppdatering
-            </Button>
-            <Button 
-              onClick={fetchBudget} 
-              variant="outline"
-            >
-              Hent status
+              {isFetchingBudget ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Henter...
+                </>
+              ) : (
+                "Hent status"
+              )}
             </Button>
           </div>
 
@@ -139,16 +177,16 @@ export const ScrapingManager = () => {
                   {budget.budget_used} / {budget.budget_total} brukt
                 </span>
               </div>
-              <Progress 
-                value={(budget.budget_used / budget.budget_total) * 100} 
-              />
+              <Progress value={(budget.budget_used / budget.budget_total) * 100} />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{budget.budget_remaining} forespørsler gjenstår</span>
-                <span>Dato: {new Date(budget.date).toLocaleDateString('no-NO')}</span>
+                <span>
+                  Dato: {new Date(budget.date).toLocaleDateString('no-NO')}
+                </span>
               </div>
-              <Button 
-                onClick={handleResetBudget} 
-                variant="outline" 
+              <Button
+                onClick={handleResetBudget}
+                variant="outline"
                 size="sm"
                 className="w-full mt-2"
               >
