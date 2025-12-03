@@ -18,21 +18,6 @@ interface Product {
   scrape_frequency_hours?: number;
 }
 
-interface MerchantListing {
-  id: string;
-  variant_id: string;
-  merchant_name: string;
-  price: number;
-  condition: string;
-  url?: string;
-}
-
-interface NormalizedPrice {
-  price: number;
-  confidence: number;
-  reason?: string;
-}
-
 interface ScrapedListing {
   merchant_name: string;
   price: number;
@@ -47,15 +32,6 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
     console.error('FIRECRAWL_API_KEY not configured');
     return null;
   }
-  
-  const { data, error: budgetError } = await supabase.functions.invoke('budget-manager', {
-    body: { action: 'get' },
-  });
-
-  if (budgetError || !data?.canScrape) {
-    console.log('Scraping budget exhausted, skipping Firecrawl request.');
-    return null;
-  }
 
   try {
     console.log(`Scraping ${url} with Firecrawl...`);
@@ -67,7 +43,7 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
       },
       body: JSON.stringify({
         url,
-        crawlerOptions: { 
+        crawlerOptions: {
           pageOptions: { onlyMainContent: true }
         },
       }),
@@ -78,7 +54,7 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
       console.error(`Firecrawl error for ${url}:`, response.status, errorText);
       return null;
     }
-    
+
     await supabase.functions.invoke('budget-manager', {
       body: { action: 'increment', increment: 1 },
     });
@@ -94,10 +70,10 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
 async function scrapeFinnNo(supabase: any, productName: string, category: string): Promise<ScrapedListing[]> {
   const searchQuery = encodeURIComponent(productName);
   const finnUrl = `https://www.finn.no/bap/forsale/search.html?q=${searchQuery}`;
-  
+
   console.log(`Scraping Finn.no for: ${productName}`);
   const result = await scrapeWithFirecrawl(supabase, finnUrl);
-  
+
   if (!result?.markdown) {
     console.log('No markdown content from Finn.no');
     return [];
@@ -105,15 +81,15 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
 
   const listings: ScrapedListing[] = [];
   const lines = result.markdown.split('\n');
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    
+
     const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
     if (priceMatch) {
       const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
       const price = parseInt(priceStr, 10);
-      
+
       if (price > 100 && price < 1000000) {
         let title = '';
         for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
@@ -123,20 +99,20 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
             break;
           }
         }
-        
+
         if (title) {
           listings.push({
             merchant_name: 'Finn.no',
             price,
             condition: 'used',
-            url: finnUrl, // TODO: try to extract specific listing URL
+            url: finnUrl, 
             title,
           });
         }
       }
     }
   }
-  
+
   console.log(`Found ${listings.length} listings on Finn.no`);
   return listings;
 }
@@ -223,7 +199,7 @@ Matching Rules:
 Return the analysis with matched listings grouped by variant, including price tiers and market insights.`;
 
     console.log(`Batch normalizing ${listings.length} listings for ${productName}`);
-    
+
     const response = await fetch(
       'https://europe-west4-aiplatform.googleapis.com/v1/projects/zeivo-477017/locations/europe-west4/publishers/google/models/gemini-2.5-flash:generateContent',
       {
@@ -325,7 +301,7 @@ Return the analysis with matched listings grouped by variant, including price ti
 
     const data = await response.json();
     const functionCall = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
-    
+
     if (functionCall?.name === 'return_normalized_listings') {
       const result = functionCall.args as BatchNormalizationResult;
       console.log(`✓ Batch normalized ${listings.length} listings into ${result.matched_listings.length} variants`);
@@ -334,13 +310,13 @@ Return the analysis with matched listings grouped by variant, including price ti
   } catch (error) {
     console.error('Error in batch normalization:', error);
   }
-  
+
   return null;
 }
 
 async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerName: string): Promise<ScrapedListing[]> {
   const result = await scrapeWithFirecrawl(supabase, url);
-  
+
   if (!result?.markdown) {
     console.log(`No markdown content from ${retailerName}`);
     return [];
@@ -348,15 +324,15 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
 
   const listings: ScrapedListing[] = [];
   const lines = result.markdown.split('\n');
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    
+
     const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
     if (priceMatch) {
       const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
       const price = parseInt(priceStr, 10);
-      
+
       if (price > 100 && price < 1000000) {
         let title = '';
         for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
@@ -366,7 +342,7 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
             break;
           }
         }
-        
+
         if (title) {
           listings.push({
             merchant_name: retailerName,
@@ -379,7 +355,7 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
       }
     }
   }
-  
+
   console.log(`Found ${listings.length} listings on ${retailerName}`);
   return listings;
 }
@@ -396,8 +372,26 @@ serve(async (req: Request) => {
     );
 
     const { force } = await req.json().catch(() => ({ force: false }));
-    
+
     console.log('Starting intelligent price scraping...', force ? '(FORCED)' : '');
+
+    const { data: budgetData, error: budgetError } = await supabase.functions.invoke('budget-manager', {
+      body: { action: 'get' },
+    });
+
+    if (budgetError) {
+      throw new Error(`Failed to get budget: ${budgetError.message}`);
+    }
+
+    let remainingBudget = budgetData.budget.daily_limit - budgetData.budget.requests_used;
+    console.log(`Initial budget: ${remainingBudget} requests remaining.`);
+
+    if (!force && remainingBudget <= 0) {
+      console.log('Scraping budget exhausted. Exiting.');
+      return new Response(JSON.stringify({ success: true, message: "Budget exhausted." }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const { data: products, error: productsError } = await supabase
       .from('products')
@@ -409,24 +403,37 @@ serve(async (req: Request) => {
     console.log(`Found ${products?.length || 0} products to process`);
 
     const results = [];
-    let totalScraped = 0;
 
     for (const product of products || []) {
+      if (!force && remainingBudget <= 0) {
+        console.log('Budget exhausted during run. Stopping.');
+        break;
+      }
+
       console.log(`\n=== Processing: ${product.name} (Priority: ${product.priority_score}) ===`);
 
       if (!force) {
-        const hoursSinceLastScrape = product.last_scraped_at 
+        const hoursSinceLastScrape = product.last_scraped_at
           ? (Date.now() - new Date(product.last_scraped_at).getTime()) / (1000 * 60 * 60)
           : Infinity;
-          
+
         if (hoursSinceLastScrape < (product.scrape_frequency_hours || 24)) {
           console.log(`Skipping - scraped ${Math.floor(hoursSinceLastScrape)}h ago`);
           continue;
         }
       }
 
-      const scrapedListings = await scrapeFinnNo(supabase, product.name, product.category);
-      totalScraped += scrapedListings.length;
+      const allListings: ScrapedListing[] = [];
+
+      if (remainingBudget > 0) {
+        const finnListings = await scrapeFinnNo(supabase, product.name, product.category);
+        if (finnListings.length > 0) {
+          remainingBudget--;
+          allListings.push(...finnListings);
+        }
+      } else {
+        console.log('Budget exhausted, skipping Finn.no scrape.');
+      }
 
       const { data: merchantUrls } = await supabase
         .from('merchant_urls')
@@ -434,16 +441,21 @@ serve(async (req: Request) => {
         .eq('category', product.category)
         .eq('is_active', true);
 
-      const retailerListings: ScrapedListing[] = [];
       if (merchantUrls) {
         for (const merchantUrl of merchantUrls) {
-          const listings = await scrapeRetailerWithFirecrawl(
-            supabase, 
-            merchantUrl.url, 
+          if (remainingBudget <= 0) {
+            console.log('Budget exhausted, skipping retailer scrapes.');
+            break;
+          }
+          const retailerListings = await scrapeRetailerWithFirecrawl(
+            supabase,
+            merchantUrl.url,
             merchantUrl.merchant_name
           );
-          retailerListings.push(...listings);
-          
+          if (retailerListings.length > 0) {
+            remainingBudget--;
+            allListings.push(...retailerListings);
+          }
           await supabase
             .from('merchant_urls')
             .update({ last_scraped_at: new Date().toISOString() })
@@ -463,7 +475,6 @@ serve(async (req: Request) => {
 
       console.log(`Found ${variants.length} variants`);
 
-      const allListings = [...scrapedListings, ...retailerListings];
       if (allListings.length > 0 && variants.length > 0) {
         const batchResult = await batchNormalizeListings(
           product.name,
@@ -474,7 +485,7 @@ serve(async (req: Request) => {
 
         if (batchResult) {
           const listingGroupId = crypto.randomUUID();
-          
+
           for (const variantMatch of batchResult.matched_listings) {
             await supabase
               .from('merchant_listings')
@@ -508,11 +519,11 @@ serve(async (req: Request) => {
 
             const newListings = listingsToInsert.filter(l => l.condition === 'new');
             const usedListings = listingsToInsert.filter(l => l.condition === 'used');
-            
+
             const price_new = newListings.length > 0
               ? Math.round(newListings.reduce((sum, l) => sum + l.price, 0) / newListings.length)
               : null;
-              
+
             const price_used = usedListings.length > 0
               ? variantMatch.price_range.median
               : null;
@@ -574,7 +585,6 @@ serve(async (req: Request) => {
     }
 
     console.log('\n=== Price update completed ===');
-    console.log(`Scraped ${totalScraped + retailerListings.length} new listings`);
     console.log(`Processed ${results.length} variants across ${products?.length || 0} products`);
 
     return new Response(
@@ -584,10 +594,9 @@ serve(async (req: Request) => {
         summary: {
           products_processed: products?.length || 0,
           variants_updated: results.length,
-          listings_scraped: totalScraped + retailerListings.length,
         }
       }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
@@ -595,14 +604,13 @@ serve(async (req: Request) => {
   } catch (error) {
     console.error('Error in update-prices:', error);
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Unknown error'
       }),
-      { 
+      {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   }
 });
-
