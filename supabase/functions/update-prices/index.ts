@@ -46,13 +46,107 @@ interface FirecrawlResult {
 }
 
 /**
+ * Direct HTML scraping fallback that doesn't use Firecrawl
+ * Used when Firecrawl API fails or has credit issues
+ *
+ * @param url - URL to scrape
+ * @returns HTML content or null on error
+ */
+async function directHtmlScrape(url: string): Promise<string | null> {
+  try {
+    console.log(`Direct scraping (no Firecrawl): ${url}`);
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'no,en;q=0.9',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Direct scrape failed for ${url}: ${response.status}`);
+      return null;
+    }
+
+    const html = await response.text();
+    console.log(`✓ Direct scraped ${url} (${html.length} chars)`);
+    return html;
+  } catch (error) {
+    console.error(`Error in direct scrape of ${url}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Extracts price and title from HTML content
+ * Works with Norwegian e-commerce sites
+ *
+ * @param html - HTML content
+ * @param merchantName - Name of the merchant
+ * @returns Array of scraped listings
+ */
+function parseHtmlForListings(html: string, merchantName: string, url: string): ScrapedListing[] {
+  const listings: ScrapedListing[] = [];
+
+  // Remove script and style tags
+  const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+  // Extract text content
+  const text = cleanHtml.replace(/<[^>]+>/g, ' ')
+                       .replace(/\s+/g, ' ')
+                       .trim();
+
+  // Find all price patterns in text (Norwegian format: "5 990 kr", "kr 5990", etc.)
+  const priceRegex = /(\d[\d\s]{2,})\s*kr|kr\s*(\d[\d\s]{2,})/gi;
+  const matches = [...text.matchAll(priceRegex)];
+
+  const seenPrices = new Set<number>();
+
+  for (const match of matches) {
+    const priceStr = (match[1] || match[2]).replace(/\s/g, '');
+    const price = parseInt(priceStr, 10);
+
+    // Reasonable price range for electronics
+    if (price > 100 && price < 100000 && !seenPrices.has(price)) {
+      seenPrices.add(price);
+
+      // Try to extract title from nearby text (simplified)
+      const matchIndex = match.index || 0;
+      const contextStart = Math.max(0, matchIndex - 200);
+      const contextEnd = Math.min(text.length, matchIndex + 200);
+      const context = text.substring(contextStart, contextEnd);
+
+      // Look for potential product title (words before the price)
+      const titleMatch = context.substring(0, match.index! - contextStart).trim().split(/\s+/).slice(-10).join(' ');
+
+      if (titleMatch && titleMatch.length > 5) {
+        listings.push({
+          merchant_name: merchantName,
+          price,
+          condition: merchantName === 'Finn.no' ? 'used' : 'new',
+          url,
+          title: titleMatch.substring(Math.max(0, titleMatch.length - 100)) // Last 100 chars
+        });
+      }
+    }
+  }
+
+  console.log(`  Parsed ${listings.length} listings from HTML`);
+  return listings;
+}
+
+/**
  * Scrapes a URL using Firecrawl v2 API with enhanced options
+ * Falls back to direct HTML scraping if Firecrawl fails
  *
  * Improvements over v1:
  * - Multiple format support (markdown, html, links)
  * - waitFor option for dynamic content loading
  * - Configurable timeout for slow pages
  * - Extracts individual links for better data quality
+ * - Fallback to direct scraping if Firecrawl fails
  *
  * @param supabase - Supabase client instance
  * @param url - URL to scrape
@@ -73,6 +167,10 @@ async function scrapeWithFirecrawl(
     console.error('FIRECRAWL_API_KEY not configured');
     return null;
   }
+
+  // Log API key info (first/last 4 chars for debugging)
+  const maskedKey = `${firecrawlApiKey.substring(0, 4)}...${firecrawlApiKey.substring(firecrawlApiKey.length - 4)}`;
+  console.log(`Using Firecrawl API key: ${maskedKey}`);
 
   // Check budget before scraping
   const { data: canScrape, error: budgetError } = await supabase.functions.invoke('budget-manager', {
@@ -137,12 +235,24 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
   const finnUrl = `https://www.finn.no/bap/forsale/search.html?q=${searchQuery}`;
 
   console.log(`Scraping Finn.no for: ${productName}`);
+
+  // Try Firecrawl first
   const result = await scrapeWithFirecrawl(supabase, finnUrl, {
     waitFor: 3000,  // Finn.no needs time to load dynamic content
   });
 
+  // If Firecrawl fails, fall back to direct scraping
   if (!result?.markdown) {
-    console.log('No markdown content from Finn.no');
+    console.log('Firecrawl failed, trying direct scraping...');
+    const html = await directHtmlScrape(finnUrl);
+
+    if (html) {
+      const directListings = parseHtmlForListings(html, 'Finn.no', finnUrl);
+      console.log(`✓ Direct scrape found ${directListings.length} listings from Finn.no`);
+      return directListings;
+    }
+
+    console.log('Both Firecrawl and direct scraping failed for Finn.no');
     return [];
   }
 
@@ -411,12 +521,23 @@ Return the analysis with matched listings grouped by variant, price tiers, and m
 }
 
 async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerName: string): Promise<ScrapedListing[]> {
+  // Try Firecrawl first
   const result = await scrapeWithFirecrawl(supabase, url, {
     waitFor: 2000,  // Wait for dynamic pricing to load
   });
 
+  // If Firecrawl fails, fall back to direct scraping
   if (!result?.markdown) {
-    console.log(`No markdown content from ${retailerName}`);
+    console.log(`Firecrawl failed for ${retailerName}, trying direct scraping...`);
+    const html = await directHtmlScrape(url);
+
+    if (html) {
+      const directListings = parseHtmlForListings(html, retailerName, url);
+      console.log(`✓ Direct scrape found ${directListings.length} listings from ${retailerName}`);
+      return directListings;
+    }
+
+    console.log(`Both Firecrawl and direct scraping failed for ${retailerName}`);
     return [];
   }
 
@@ -531,7 +652,27 @@ async function batchScrapeRetailers(
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Batch scrape error:', response.status, errorText);
-      return { listings: [], scrapedIds: [] };
+      console.log('Falling back to sequential direct scraping for all URLs...');
+
+      // Fall back to direct scraping for each URL
+      const fallbackListings: ScrapedListing[] = [];
+      const fallbackIds: string[] = [];
+
+      for (const merchantUrl of urlsToScrape) {
+        const html = await directHtmlScrape(merchantUrl.url);
+        if (html) {
+          const listings = parseHtmlForListings(html, merchantUrl.merchant_name, merchantUrl.url);
+          if (listings.length > 0) {
+            fallbackListings.push(...listings);
+            fallbackIds.push(merchantUrl.id);
+          }
+        }
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.log(`✓ Direct scraping fallback: ${fallbackListings.length} listings from ${fallbackIds.length} URLs`);
+      return { listings: fallbackListings, scrapedIds: fallbackIds };
     }
 
     const data = await response.json();
