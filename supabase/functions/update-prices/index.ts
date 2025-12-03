@@ -37,13 +37,43 @@ interface ScrapedListing {
   title: string;
 }
 
-async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdown: string } | null> {
+interface FirecrawlResult {
+  markdown?: string;
+  html?: string;
+  links?: string[];
+  rawHtml?: string;
+  metadata?: any;
+}
+
+/**
+ * Scrapes a URL using Firecrawl v2 API with enhanced options
+ *
+ * Improvements over v1:
+ * - Multiple format support (markdown, html, links)
+ * - waitFor option for dynamic content loading
+ * - Configurable timeout for slow pages
+ * - Extracts individual links for better data quality
+ *
+ * @param supabase - Supabase client instance
+ * @param url - URL to scrape
+ * @param options - Scraping options (formats, waitFor, timeout)
+ * @returns FirecrawlResult with multiple formats or null on error
+ */
+async function scrapeWithFirecrawl(
+  supabase: any,
+  url: string,
+  options: {
+    formats?: string[];
+    waitFor?: number;
+    timeout?: number;
+  } = {}
+): Promise<FirecrawlResult | null> {
   const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
   if (!firecrawlApiKey) {
     console.error('FIRECRAWL_API_KEY not configured');
     return null;
   }
-  
+
   // Check budget before scraping
   const { data: canScrape, error: budgetError } = await supabase.functions.invoke('budget-manager', {
     body: {},
@@ -55,17 +85,23 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
   }
 
   try {
-    console.log(`Scraping ${url} with Firecrawl...`);
-    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    console.log(`Scraping ${url} with Firecrawl v2...`);
+
+    // Default options: multiple formats, wait for dynamic content, reasonable timeout
+    const scrapeOptions = {
+      url,
+      formats: options.formats || ['markdown', 'html', 'links'],
+      timeout: options.timeout || 15000,  // 15 seconds
+      waitFor: options.waitFor || 2000,   // 2 seconds for JS content to load
+    };
+
+    const response = await fetch('https://api.firecrawl.dev/v2/scrape', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${firecrawlApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        url,
-        formats: ['markdown'],
-      }),
+      body: JSON.stringify(scrapeOptions),
     });
 
     if (!response.ok) {
@@ -73,14 +109,23 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
       console.error(`Firecrawl error for ${url}:`, response.status, errorText);
       return null;
     }
-    
+
     // Increment budget after successful scrape
     await supabase.functions.invoke('budget-manager', {
       body: { increment: 1 },
     });
 
     const data = await response.json();
-    return { markdown: data.data?.markdown || '' };
+    const result: FirecrawlResult = {
+      markdown: data.data?.markdown || '',
+      html: data.data?.html || '',
+      links: data.data?.links || [],
+      rawHtml: data.data?.rawHtml || '',
+      metadata: data.data?.metadata || {},
+    };
+
+    console.log(`✓ Scraped ${url} - Extracted ${result.links?.length || 0} links`);
+    return result;
   } catch (error) {
     console.error(`Error scraping ${url} with Firecrawl:`, error);
     return null;
@@ -90,10 +135,12 @@ async function scrapeWithFirecrawl(supabase: any, url: string): Promise<{ markdo
 async function scrapeFinnNo(supabase: any, productName: string, category: string): Promise<ScrapedListing[]> {
   const searchQuery = encodeURIComponent(productName);
   const finnUrl = `https://www.finn.no/bap/forsale/search.html?q=${searchQuery}`;
-  
+
   console.log(`Scraping Finn.no for: ${productName}`);
-  const result = await scrapeWithFirecrawl(supabase, finnUrl);
-  
+  const result = await scrapeWithFirecrawl(supabase, finnUrl, {
+    waitFor: 3000,  // Finn.no needs time to load dynamic content
+  });
+
   if (!result?.markdown) {
     console.log('No markdown content from Finn.no');
     return [];
@@ -101,24 +148,43 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
 
   const listings: ScrapedListing[] = [];
   const lines = result.markdown.split('\n');
-  
+
+  // Extract individual listing URLs from the links array
+  const listingUrls = (result.links || []).filter(link =>
+    link.includes('finn.no') &&
+    (link.includes('/bap/') || link.includes('/forsale/')) &&
+    !link.includes('/search.html') &&
+    link.match(/\/\d+$/)  // Finn.no listing URLs typically end with a numeric ID
+  );
+
+  console.log(`Found ${listingUrls.length} individual listing URLs`);
+
+  // Create a map of listing URLs for quick lookup
+  const urlMap = new Map<number, string>();
+  let urlIndex = 0;
+
   let currentListing: Partial<ScrapedListing> = {};
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    
+
     // Look for price patterns (e.g., "5 990 kr", "5990 kr", "kr 5990")
     const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
     if (priceMatch) {
       const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
       const price = parseInt(priceStr, 10);
-      
+
       if (price > 100 && price < 1000000) {
         currentListing.price = price;
         currentListing.merchant_name = 'Finn.no';
         currentListing.condition = 'used'; // Finn.no is primarily used items
-        currentListing.url = finnUrl;
-        
+
+        // Assign individual listing URL if available, otherwise use search URL
+        currentListing.url = listingUrls[urlIndex] || finnUrl;
+        if (listingUrls[urlIndex]) {
+          urlIndex++;
+        }
+
         // Look for title in nearby lines
         for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
           const nearbyLine = lines[j].trim();
@@ -127,7 +193,7 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
             break;
           }
         }
-        
+
         if (currentListing.title) {
           listings.push(currentListing as ScrapedListing);
           currentListing = {};
@@ -135,8 +201,8 @@ async function scrapeFinnNo(supabase: any, productName: string, category: string
       }
     }
   }
-  
-  console.log(`Found ${listings.length} listings on Finn.no`);
+
+  console.log(`✓ Found ${listings.length} listings with ${listings.filter(l => l.url !== finnUrl).length} individual URLs`);
   return listings;
 }
 
@@ -335,8 +401,10 @@ Return the analysis with matched listings grouped by variant, price tiers, and m
 }
 
 async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerName: string): Promise<ScrapedListing[]> {
-  const result = await scrapeWithFirecrawl(supabase, url);
-  
+  const result = await scrapeWithFirecrawl(supabase, url, {
+    waitFor: 2000,  // Wait for dynamic pricing to load
+  });
+
   if (!result?.markdown) {
     console.log(`No markdown content from ${retailerName}`);
     return [];
@@ -344,16 +412,16 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
 
   const listings: ScrapedListing[] = [];
   const lines = result.markdown.split('\n');
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    
+
     // Look for Norwegian price patterns (e.g., "5 990 kr", "kr 5990")
     const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
     if (priceMatch) {
       const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
       const price = parseInt(priceStr, 10);
-      
+
       if (price > 100 && price < 1000000) {
         let title = '';
         // Look for title in nearby lines
@@ -364,7 +432,7 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
             break;
           }
         }
-        
+
         if (title) {
           listings.push({
             merchant_name: retailerName,
@@ -377,9 +445,187 @@ async function scrapeRetailerWithFirecrawl(supabase: any, url: string, retailerN
       }
     }
   }
-  
+
   console.log(`Found ${listings.length} listings on ${retailerName}`);
   return listings;
+}
+
+interface BatchScrapeJob {
+  id: string;
+  url: string;
+  merchant_name: string;
+}
+
+/**
+ * Batch scrapes multiple retailer URLs concurrently using Firecrawl v2 Batch API
+ *
+ * Key benefits:
+ * - Scrapes multiple URLs in parallel (vs sequential scraping)
+ * - More efficient use of API quota
+ * - Automatic budget management (respects daily limits)
+ * - Returns both listings and scraped IDs for database updates
+ *
+ * Process:
+ * 1. Checks budget and calculates how many URLs can be scraped
+ * 2. Initiates batch scrape job via Firecrawl API
+ * 3. Polls for job completion (max 5 minutes)
+ * 4. Processes results and extracts price/title from markdown
+ * 5. Updates budget and returns listings
+ *
+ * @param supabase - Supabase client instance
+ * @param merchantUrls - Array of merchant URL objects to scrape
+ * @returns Object with extracted listings and successfully scraped IDs
+ */
+async function batchScrapeRetailers(
+  supabase: any,
+  merchantUrls: Array<{ id: string; url: string; merchant_name: string }>
+): Promise<{ listings: ScrapedListing[]; scrapedIds: string[] }> {
+  const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
+  if (!firecrawlApiKey || !merchantUrls || merchantUrls.length === 0) {
+    console.log('No Firecrawl API key or no merchant URLs provided');
+    return { listings: [], scrapedIds: [] };
+  }
+
+  // Check budget before batch scraping
+  const { data: budgetCheck } = await supabase.functions.invoke('budget-manager', {
+    body: {},
+  });
+
+  if (!budgetCheck?.canScrape) {
+    console.log('Scraping budget exhausted, skipping batch scrape.');
+    return { listings: [], scrapedIds: [] };
+  }
+
+  // Calculate how many URLs we can scrape based on remaining budget
+  const remainingBudget = budgetCheck.budget?.daily_limit - budgetCheck.budget?.requests_used || 0;
+  const urlsToScrape = merchantUrls.slice(0, Math.min(merchantUrls.length, remainingBudget));
+
+  console.log(`Batch scraping ${urlsToScrape.length} retailer URLs...`);
+
+  try {
+    // Initiate batch scrape job
+    const response = await fetch('https://api.firecrawl.dev/v2/batch/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        urls: urlsToScrape.map(m => m.url),
+        formats: ['markdown', 'html'],
+        timeout: 15000,
+        waitFor: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Batch scrape error:', response.status, errorText);
+      return { listings: [], scrapedIds: [] };
+    }
+
+    const data = await response.json();
+    const jobId = data.id;
+
+    console.log(`Batch scrape job started: ${jobId}`);
+
+    // Poll for job completion (with timeout)
+    let attempts = 0;
+    const maxAttempts = 60; // 5 minutes max (5 seconds * 60)
+    let jobComplete = false;
+    let results: any[] = [];
+
+    while (attempts < maxAttempts && !jobComplete) {
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+
+      const statusResponse = await fetch(`https://api.firecrawl.dev/v2/batch/scrape/${jobId}`, {
+        headers: {
+          'Authorization': `Bearer ${firecrawlApiKey}`,
+        },
+      });
+
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        console.log(`Batch job status: ${statusData.status} (${statusData.completed}/${statusData.total})`);
+
+        if (statusData.status === 'completed') {
+          results = statusData.data || [];
+          jobComplete = true;
+        } else if (statusData.status === 'failed') {
+          console.error('Batch scrape job failed');
+          break;
+        }
+      }
+
+      attempts++;
+    }
+
+    if (!jobComplete) {
+      console.log('Batch scrape job timed out, processing partial results...');
+    }
+
+    // Increment budget for successful scrapes
+    await supabase.functions.invoke('budget-manager', {
+      body: { increment: urlsToScrape.length },
+    });
+
+    // Process results and extract listings
+    const allListings: ScrapedListing[] = [];
+    const scrapedIds: string[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const merchantUrl = urlsToScrape[i];
+
+      if (!result?.markdown) {
+        console.log(`No content for ${merchantUrl.merchant_name}`);
+        continue;
+      }
+
+      scrapedIds.push(merchantUrl.id);
+
+      // Parse markdown for price and title
+      const lines = result.markdown.split('\n');
+
+      for (let j = 0; j < lines.length; j++) {
+        const line = lines[j].trim();
+
+        const priceMatch = line.match(/(\d[\d\s]*)\s*kr|kr\s*(\d[\d\s]*)/i);
+        if (priceMatch) {
+          const priceStr = (priceMatch[1] || priceMatch[2]).replace(/\s/g, '');
+          const price = parseInt(priceStr, 10);
+
+          if (price > 100 && price < 1000000) {
+            let title = '';
+            for (let k = Math.max(0, j - 3); k < Math.min(lines.length, j + 3); k++) {
+              const nearbyLine = lines[k].trim();
+              if (nearbyLine.length > 10 && nearbyLine.length < 200 && !nearbyLine.match(/kr/i)) {
+                title = nearbyLine;
+                break;
+              }
+            }
+
+            if (title) {
+              allListings.push({
+                merchant_name: merchantUrl.merchant_name,
+                price,
+                condition: 'new',
+                url: merchantUrl.url,
+                title
+              });
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`✓ Batch scraped ${urlsToScrape.length} URLs, extracted ${allListings.length} listings`);
+    return { listings: allListings, scrapedIds };
+
+  } catch (error) {
+    console.error('Error in batch scraping:', error);
+    return { listings: [], scrapedIds: [] };
+  }
 }
 
 serve(async (req: Request) => {
@@ -440,22 +686,19 @@ serve(async (req: Request) => {
         .eq('category', product.category)
         .eq('is_active', true);
 
-      // Scrape retailers for new products
-      const retailerListings: ScrapedListing[] = [];
-      if (merchantUrls) {
-        for (const merchantUrl of merchantUrls) {
-          const listings = await scrapeRetailerWithFirecrawl(
-            supabase, 
-            merchantUrl.url, 
-            merchantUrl.merchant_name
-          );
-          retailerListings.push(...listings);
-          
-          // Update last_scraped_at for this URL
+      // Scrape retailers for new products using batch scraping
+      let retailerListings: ScrapedListing[] = [];
+      if (merchantUrls && merchantUrls.length > 0) {
+        // Use batch scraping for efficiency (v2 API)
+        const { listings, scrapedIds } = await batchScrapeRetailers(supabase, merchantUrls);
+        retailerListings = listings;
+
+        // Update last_scraped_at for successfully scraped URLs
+        if (scrapedIds.length > 0) {
           await supabase
             .from('merchant_urls')
             .update({ last_scraped_at: new Date().toISOString() })
-            .eq('id', merchantUrl.id);
+            .in('id', scrapedIds);
         }
       }
 
