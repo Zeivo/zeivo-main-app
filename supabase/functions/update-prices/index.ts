@@ -259,32 +259,42 @@ Category: ${category}
 Available Variants:
 ${JSON.stringify(variants, null, 2)}
 
-Finn.no Listings:
-${JSON.stringify(listings.map((l, i) => ({ index: i, title: l.title, price: l.price, url: l.url })), null, 2)}
+Product Listings (from multiple sources - Finn.no and retailers):
+${JSON.stringify(listings.map((l, i) => ({
+  index: i,
+  title: l.title,
+  price: l.price,
+  url: l.url,
+  merchant: l.merchant_name,
+  condition: l.condition
+})), null, 2)}
 
 Tasks:
-1. Match each listing to a variant (or mark as unmatched)
-2. Assess listing quality based on title
+1. Match each listing to a variant based on storage, color, and model (or mark as unmatched)
+2. Assess listing quality based on title (only for used items)
 3. Group listings by variant
 4. Calculate price ranges and tiers per variant
 5. Generate market insights in Norwegian
+6. IMPORTANT: Match ALL listings, including both used items from Finn.no AND new items from retailers
 
-Quality Assessment Guidelines:
+Quality Assessment Guidelines (for used items only):
 - "excellent": Words like "ny", "ubrukt", "perfekt", "som ny"
 - "good": Words like "lite brukt", "god stand", "fungerer perfekt"
 - "acceptable": Words like "brukt", "normal slitasje"
 - "poor": Words like "defekt", "ødelagt"
+- For NEW items from retailers: always use "excellent"
 
 Matching Rules:
 - Match storage GB (128, 256, 512, 1024)
 - Match color (Norwegian and English names)
+- Match model if specified
 - Confidence >0.9: Exact match on storage + color
 - Confidence 0.7-0.9: Match on storage OR color
 - Confidence <0.7: Mark as unmatched
 
 Return the analysis with matched listings grouped by variant, price tiers, and market insights.`;
 
-    console.log(`Batch normalizing ${listings.length} Finn.no listings for ${productName}`);
+    console.log(`Batch normalizing ${listings.length} listings (used + new) for ${productName}`);
     
     const response = await fetch(
       'https://europe-west4-aiplatform.googleapis.com/v1/projects/zeivo-477017/locations/europe-west4/publishers/google/models/gemini-2.5-flash:generateContent',
@@ -619,7 +629,12 @@ async function batchScrapeRetailers(
       }
     }
 
+    const merchantCounts: Record<string, number> = {};
+    allListings.forEach(l => {
+      merchantCounts[l.merchant_name] = (merchantCounts[l.merchant_name] || 0) + 1;
+    });
     console.log(`✓ Batch scraped ${urlsToScrape.length} URLs, extracted ${allListings.length} listings`);
+    console.log(`   By merchant: ${Object.entries(merchantCounts).map(([m, c]) => `${m}(${c})`).join(', ')}`);
     return { listings: allListings, scrapedIds };
 
   } catch (error) {
@@ -686,12 +701,18 @@ serve(async (req: Request) => {
         .eq('category', product.category)
         .eq('is_active', true);
 
+      console.log(`Found ${merchantUrls?.length || 0} active merchant URLs for category: ${product.category}`);
+
       // Scrape retailers for new products using batch scraping
       let retailerListings: ScrapedListing[] = [];
       if (merchantUrls && merchantUrls.length > 0) {
         // Use batch scraping for efficiency (v2 API)
         const { listings, scrapedIds } = await batchScrapeRetailers(supabase, merchantUrls);
         retailerListings = listings;
+
+        if (retailerListings.length === 0) {
+          console.warn(`⚠️  No retailer listings extracted from ${merchantUrls.length} URLs - check if URLs are correct or scraping failed`);
+        }
 
         // Update last_scraped_at for successfully scraped URLs
         if (scrapedIds.length > 0) {
@@ -700,6 +721,8 @@ serve(async (req: Request) => {
             .update({ last_scraped_at: new Date().toISOString() })
             .in('id', scrapedIds);
         }
+      } else {
+        console.warn(`⚠️  No merchant URLs configured for category: ${product.category} - only used prices from Finn.no will be available`);
       }
 
       // Get all variants for this product
@@ -717,6 +740,8 @@ serve(async (req: Request) => {
 
       // Batch normalize with AI
       const allListings = [...scrapedListings, ...retailerListings];
+      console.log(`📊 Total listings: ${allListings.length} (${scrapedListings.length} used from Finn.no, ${retailerListings.length} new from retailers)`);
+
       if (allListings.length > 0 && variants.length > 0) {
         const batchResult = await batchNormalizeFinnListings(
           product.name,
@@ -731,6 +756,7 @@ serve(async (req: Request) => {
         );
 
         if (batchResult) {
+          console.log(`✓ AI matched ${batchResult.matched_listings.length} variants with listings`);
           const listingGroupId = crypto.randomUUID();
           
           for (const variantMatch of batchResult.matched_listings) {
@@ -741,18 +767,37 @@ serve(async (req: Request) => {
               .eq('variant_id', variantMatch.variant_id);
 
             // Insert matched listings with quality tiers
-            const listingsToInsert = variantMatch.listings.map(listing => ({
-              variant_id: variantMatch.variant_id,
-              merchant_name: allListings[listing.finn_listing_index].merchant_name,
-              price: listing.price,
-              condition: allListings[listing.finn_listing_index].condition,
-              url: listing.url,
-              is_valid: true,
-              confidence: listing.confidence,
-              price_tier: listing.condition_quality,
-              listing_group_id: listingGroupId,
-              market_insight: batchResult.market_insights.recommendation,
-            }));
+            const listingsToInsert = variantMatch.listings
+              .filter(listing => {
+                // Validate that the listing index is valid
+                if (listing.finn_listing_index < 0 || listing.finn_listing_index >= allListings.length) {
+                  console.warn(`⚠️  Invalid listing index ${listing.finn_listing_index} (max: ${allListings.length - 1})`);
+                  return false;
+                }
+                return true;
+              })
+              .map(listing => ({
+                variant_id: variantMatch.variant_id,
+                merchant_name: allListings[listing.finn_listing_index].merchant_name,
+                price: listing.price,
+                condition: allListings[listing.finn_listing_index].condition,
+                url: listing.url,
+                is_valid: true,
+                confidence: listing.confidence,
+                price_tier: listing.condition_quality,
+                listing_group_id: listingGroupId,
+                market_insight: batchResult.market_insights.recommendation,
+              }));
+
+            // Log merchant distribution
+            const merchantCounts: Record<string, number> = {};
+            const conditionCounts = { new: 0, used: 0 };
+            listingsToInsert.forEach(l => {
+              merchantCounts[l.merchant_name] = (merchantCounts[l.merchant_name] || 0) + 1;
+              conditionCounts[l.condition as 'new' | 'used'] = (conditionCounts[l.condition as 'new' | 'used'] || 0) + 1;
+            });
+            console.log(`   Variant ${variantMatch.variant_id}: ${listingsToInsert.length} listings - ${conditionCounts.new} new, ${conditionCounts.used} used`);
+            console.log(`   Merchants: ${Object.entries(merchantCounts).map(([m, c]) => `${m}(${c})`).join(', ')}`);
 
             if (listingsToInsert.length > 0) {
               const { error: insertError } = await supabase
