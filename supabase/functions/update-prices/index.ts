@@ -143,10 +143,11 @@ function parseHtmlForListings(html: string, merchantName: string, url: string): 
  *
  * Improvements over v1:
  * - Multiple format support (markdown, html, links)
- * - waitFor option for dynamic content loading
+ * - actions array for page interactions (wait, click, etc.)
  * - Configurable timeout for slow pages
  * - Extracts individual links for better data quality
  * - Fallback to direct scraping if Firecrawl fails
+ * - Better error handling for 402 (payment) and 429 (rate limit)
  *
  * @param supabase - Supabase client instance
  * @param url - URL to scrape
@@ -185,13 +186,23 @@ async function scrapeWithFirecrawl(
   try {
     console.log(`Scraping ${url} with Firecrawl v2...`);
 
-    // Default options: multiple formats, wait for dynamic content, reasonable timeout
-    const scrapeOptions = {
+    // Default options: multiple formats, actions for dynamic content, reasonable timeout
+    // Note: For v2 API, timeout is in milliseconds
+    const scrapeOptions: any = {
       url,
       formats: options.formats || ['markdown', 'html', 'links'],
-      timeout: options.timeout || 15000,  // 15 seconds
-      waitFor: options.waitFor || 2000,   // 2 seconds for JS content to load
+      timeout: Math.floor((options.timeout || 15000) / 1000),  // Convert to seconds for v2 API
     };
+
+    // Add actions array for waiting (v2 API style)
+    if (options.waitFor) {
+      scrapeOptions.actions = [
+        {
+          type: 'wait',
+          milliseconds: options.waitFor
+        }
+      ];
+    }
 
     const response = await fetch('https://api.firecrawl.dev/v2/scrape', {
       method: 'POST',
@@ -204,7 +215,15 @@ async function scrapeWithFirecrawl(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Firecrawl error for ${url}:`, response.status, errorText);
+
+      // Handle specific error codes
+      if (response.status === 402) {
+        console.error(`Firecrawl payment required for ${url} - credits exhausted`);
+      } else if (response.status === 429) {
+        console.error(`Firecrawl rate limit exceeded for ${url} - please wait`);
+      } else {
+        console.error(`Firecrawl error for ${url}:`, response.status, errorText);
+      }
       return null;
     }
 
@@ -214,6 +233,8 @@ async function scrapeWithFirecrawl(
     });
 
     const data = await response.json();
+
+    // v2 API returns data in data.data structure
     const result: FirecrawlResult = {
       markdown: data.data?.markdown || '',
       html: data.data?.html || '',
@@ -635,23 +656,42 @@ async function batchScrapeRetailers(
 
   try {
     // Initiate batch scrape job
+    // Note: For batch scrape, we can pass options in the body or use actions array
+    const batchRequest: any = {
+      urls: urlsToScrape.map(m => m.url),
+      formats: ['markdown', 'html'],
+    };
+
+    // Add actions for waiting on dynamic content
+    // This applies to all URLs in the batch
+    batchRequest.actions = [
+      {
+        type: 'wait',
+        milliseconds: 2000
+      }
+    ];
+
     const response = await fetch('https://api.firecrawl.dev/v2/batch/scrape', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${firecrawlApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        urls: urlsToScrape.map(m => m.url),
-        formats: ['markdown', 'html'],
-        timeout: 15000,
-        waitFor: 2000,
-      }),
+      body: JSON.stringify(batchRequest),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Batch scrape error:', response.status, errorText);
+
+      // Handle specific error codes
+      if (response.status === 402) {
+        console.error('Batch scrape payment required - Firecrawl credits exhausted');
+      } else if (response.status === 429) {
+        console.error('Batch scrape rate limit exceeded - please wait and retry');
+      } else {
+        console.error('Batch scrape error:', response.status, errorText);
+      }
+
       console.log('Falling back to sequential direct scraping for all URLs...');
 
       // Fall back to direct scraping for each URL
